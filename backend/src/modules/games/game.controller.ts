@@ -5,8 +5,7 @@ import { createGame, listGames } from "./game.service";
 
 export async function listGamesHandler(req: Request, res: Response) {
   const tenantId = getTenantId(req);
-  const season = typeof req.query.season === "string" ? req.query.season : undefined;
-  const games = await listGames(tenantId, season);
+  const games = await listGames(tenantId);
   return res.json(games);
 }
 

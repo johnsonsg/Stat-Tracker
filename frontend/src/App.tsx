@@ -45,6 +45,22 @@ function App() {
               </MiniVariantDrawer>
             }
           />
+          <Route
+            path="/games/:gameId"
+            element={
+              <MiniVariantDrawer team={{ schoolName: "Manchester", mascotName: "Lancers" }}>
+                <Box sx={{ maxWidth: 1080 }}>
+                  <Typography variant="h4" gutterBottom>
+                    Live Game Tracker
+                  </Typography>
+                  <Typography variant="body1" color="text.secondary" gutterBottom>
+                    Track plays in real time with MUI X.
+                  </Typography>
+                  <GameTracker />
+                </Box>
+              </MiniVariantDrawer>
+            }
+          />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </SignedIn>

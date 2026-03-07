@@ -10,13 +10,6 @@ const router = Router();
  * /api/games:
  *   get:
  *     summary: List games
- *     parameters:
- *       - in: query
- *         name: season
- *         schema:
- *           type: string
- *         required: false
- *         description: Season identifier to filter by
  *     responses:
  *       200:
  *         description: Array of games
@@ -37,24 +30,30 @@ router.get("/", asyncHandler(listGamesHandler));
  *           schema:
  *             type: object
  *             required:
- *               - opponent
- *               - gameDate
- *               - homeAway
  *               - season
+ *               - homeTeam
+ *               - awayTeam
+ *               - gameDate
  *             properties:
- *               opponent:
+ *               season:
+ *                 type: integer
+ *               homeTeam:
+ *                 type: string
+ *               awayTeam:
  *                 type: string
  *               gameDate:
  *                 type: string
  *                 format: date-time
- *               homeAway:
- *                 type: string
- *                 enum: [home, away]
- *               season:
- *                 type: string
  *               status:
  *                 type: string
- *                 enum: [scheduled, in_progress, final]
+ *                 enum: [scheduled, live, finished]
+ *               score:
+ *                 type: object
+ *                 properties:
+ *                   home:
+ *                     type: integer
+ *                   away:
+ *                     type: integer
  *     responses:
  *       201:
  *         description: Game created

@@ -23,7 +23,8 @@ const swaggerSpec = swaggerJSDoc({
           bearerFormat: "JWT"
         }
       }
-    }
+    },
+    security: [{ bearerAuth: [] }]
   },
   apis: [
     path.join(process.cwd(), "src/app.ts"),

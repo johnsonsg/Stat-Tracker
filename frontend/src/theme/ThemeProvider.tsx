@@ -39,7 +39,6 @@ export default function AppThemeProvider({ children }: { children: React.ReactNo
           })}
         />
         {children}
-        {/* See Docs/Theme.md for setup details. */}
       </ThemeProvider>
     </ColorModeContext.Provider>
   );

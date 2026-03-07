@@ -2,7 +2,7 @@ import cors from "cors";
 import express from "express";
 import swaggerUi from "swagger-ui-express";
 import swaggerSpec from "./config/swagger";
-import { requireAuthMiddleware } from "./middleware/auth";
+import { clerkAuthMiddleware, requireAuthMiddleware } from "./middleware/auth";
 import { tenantMiddleware } from "./middleware/tenant";
 import { errorHandler } from "./middleware/errorHandler";
 import { requestLogger } from "./middleware/requestLogger";
@@ -14,6 +14,7 @@ const app = express();
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use(requestLogger);
+app.use(clerkAuthMiddleware);
 
 /**
  * @openapi
@@ -33,7 +34,7 @@ app.get("/swagger.json", (_req, res) => {
 });
 
 app.use("/swagger", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-
+  
 app.use("/api", requireAuthMiddleware, tenantMiddleware);
 app.use("/api", apiRoutes);
 app.use("/api", testRoutes);

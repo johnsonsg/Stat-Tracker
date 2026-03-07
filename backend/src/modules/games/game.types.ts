@@ -1,11 +1,17 @@
 import { z } from "zod";
 
 export const createGameSchema = z.object({
-  opponent: z.string().min(1),
+  season: z.number().int().min(2000),
+  homeTeam: z.string().min(1),
+  awayTeam: z.string().min(1),
   gameDate: z.coerce.date(),
-  homeAway: z.enum(["home", "away"]),
-  season: z.string().min(1),
-  status: z.enum(["scheduled", "in_progress", "final"]).optional()
+  status: z.enum(["scheduled", "live", "finished"]).optional(),
+  score: z
+    .object({
+      home: z.number().int().nonnegative().optional(),
+      away: z.number().int().nonnegative().optional()
+    })
+    .optional()
 });
 
 export type CreateGameInput = z.infer<typeof createGameSchema>;

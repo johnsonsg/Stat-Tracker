@@ -10,7 +10,8 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test"
   },
   "dependencies": {
     "@clerk/express": "^2.0.1",
