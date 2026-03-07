@@ -1,0 +1,16 @@
+{
+  "name": "stat-tracker",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "npm run -w frontend dev",
+    "dev:frontend": "npm run -w frontend dev",
+    "dev:backend": "npm run -w backend dev",
+    "build": "npm run -w frontend build && npm run -w backend build",
+    "lint": "npm run -w frontend lint && npm run -w backend lint",
+    "typecheck": "npm run -w frontend typecheck && npm run -w backend typecheck"
+  }
+}
