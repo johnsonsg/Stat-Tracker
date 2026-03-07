@@ -31,7 +31,7 @@ import PlayerSelector from "./components/PlayerSelector";
 import ResultSelector from "./components/ResultSelector";
 import PlayTimeline from "./components/PlayTimeline";
 import QuickRoster from "./components/QuickRoster";
-import type { TeamPlayer } from "@/types/teamData";
+import type { TeamPlayer, TeamScheduleGame } from "@/types/teamData";
 import PlayConfirmationBanner from "./components/PlayConfirmationBanner";
 import { socket } from "@/services/socket";
 import { useHotkeys } from "react-hotkeys-hook";
@@ -59,6 +59,8 @@ type StatEntryPageProps = {
   gameId: string | null;
   onSelectGame?: (gameId: string) => void;
   roster: TeamPlayer[];
+  schedule: TeamScheduleGame[];
+  teamName: string | null;
 };
 
 type GameSummary = {
@@ -119,7 +121,13 @@ const RESULT_HOTKEYS = {
   FUMBLE: "f"
 } as const;
 
-export default function StatEntryPage({ gameId, onSelectGame, roster }: StatEntryPageProps) {
+export default function StatEntryPage({
+  gameId,
+  onSelectGame,
+  roster,
+  schedule,
+  teamName
+}: StatEntryPageProps) {
   const { getToken } = useAuth();
   const [playType, setPlayType] = useState<string | undefined>();
   const [primaryPlayer, setPrimaryPlayer] = useState<TeamPlayer | null>(null);
@@ -135,6 +143,8 @@ export default function StatEntryPage({ gameId, onSelectGame, roster }: StatEntr
   const [selectedGameId, setSelectedGameId] = useState<string | "">(gameId ?? "");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [isScheduleCreating, setIsScheduleCreating] = useState(false);
+  const [isStatusUpdating, setIsStatusUpdating] = useState(false);
   const [createErrors, setCreateErrors] = useState<{
     season?: string;
     homeTeam?: string;
@@ -166,6 +176,7 @@ export default function StatEntryPage({ gameId, onSelectGame, roster }: StatEntr
   const statEntryRef = useRef<HTMLDivElement | null>(null);
   const primarySelectorRef = useRef<HTMLDivElement | null>(null);
   const secondarySelectorRef = useRef<HTMLDivElement | null>(null);
+  const autoCreateRef = useRef(false);
   const [gameState, setGameState] = useState({
     quarter: 1,
     clock: "12:00",
@@ -183,6 +194,89 @@ export default function StatEntryPage({ gameId, onSelectGame, roster }: StatEntr
   const isShortcutOpen = Boolean(shortcutAnchor);
   const shortcutId = isShortcutOpen ? "stat-entry-shortcuts" : undefined;
   const isPrimaryActive = activePlayerField === "primary";
+  const normalizedTeamName = teamName?.trim() ?? "";
+
+  const toDateKey = (value: string) => {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return value;
+    }
+    return date.toISOString().slice(0, 10);
+  };
+
+  const normalizeText = (value: string) => value.trim().toLowerCase();
+
+  const inferMatchup = (item: TeamScheduleGame) => {
+    const location = item.location.toLowerCase();
+    const isHome = location.includes("home");
+    const isAway = location.includes("away");
+    let homeTeam = normalizedTeamName || "Home";
+    let awayTeam = item.opponent;
+    if (isAway && !isHome) {
+      homeTeam = item.opponent;
+      awayTeam = normalizedTeamName || "Away";
+    }
+    return { homeTeam, awayTeam };
+  };
+
+  const formatLocationLabel = (value: string) => {
+    const location = value.toLowerCase();
+    if (location.includes("home")) {
+      return "Home";
+    }
+    if (location.includes("away")) {
+      return "Away";
+    }
+    return "TBD";
+  };
+
+  const formatScheduleDate = (value: string) => {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return value;
+    }
+    return date.toLocaleDateString();
+  };
+
+  const scheduleMatches = useMemo(() => {
+    const matches = new Map<string, GameSummary>();
+    schedule.forEach((item) => {
+      const match = games.find((game) => {
+        if (toDateKey(game.gameDate) !== toDateKey(item.dateTime)) {
+          return false;
+        }
+        const opponent = normalizeText(item.opponent);
+        return (
+          normalizeText(game.homeTeam) === opponent ||
+          normalizeText(game.awayTeam) === opponent
+        );
+      });
+      if (match) {
+        matches.set(item.id, match);
+      }
+    });
+    return matches;
+  }, [games, schedule]);
+
+  const sortedSchedule = useMemo(() => {
+    return [...schedule].sort((a, b) => {
+      const dateA = new Date(a.dateTime).getTime();
+      const dateB = new Date(b.dateTime).getTime();
+      if (Number.isNaN(dateA) || Number.isNaN(dateB)) {
+        return 0;
+      }
+      return dateA - dateB;
+    });
+  }, [schedule]);
+
+  const matchedGameIds = useMemo(() => {
+    return new Set(Array.from(scheduleMatches.values()).map((game) => game._id));
+  }, [scheduleMatches]);
+
+  const selectedGame = useMemo(
+    () => games.find((game) => game._id === selectedGameId) ?? null,
+    [games, selectedGameId]
+  );
 
   const shouldIgnoreHotkey = (event?: KeyboardEvent) => {
     const target = event?.target as HTMLElement | null;
@@ -588,6 +682,112 @@ export default function StatEntryPage({ gameId, onSelectGame, roster }: StatEntr
       setError(message);
     } finally {
       setGamesLoading(false);
+    }
+  };
+
+  const createGameFromSchedule = async (item: TeamScheduleGame) => {
+    if (!normalizedTeamName) {
+      showSnackbar("Set your team name before creating a game.", "error");
+      return;
+    }
+
+    setIsScheduleCreating(true);
+    try {
+      const token = await getToken();
+      if (!token) {
+        throw new Error("Missing session token");
+      }
+
+      const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
+      const match = inferMatchup(item);
+      const seasonDate = new Date(item.dateTime);
+      const season = Number.isNaN(seasonDate.getTime())
+        ? new Date().getFullYear()
+        : seasonDate.getFullYear();
+
+      const response = await fetch(`${apiBase}/api/games`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          season,
+          homeTeam: match.homeTeam,
+          awayTeam: match.awayTeam,
+          gameDate: item.dateTime,
+          status: "scheduled"
+        })
+      });
+
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || "Failed to create game");
+      }
+
+      const created = (await response.json()) as GameSummary;
+      await refreshGames();
+      setSelectedGameId(created._id);
+      if (onSelectGame) {
+        onSelectGame(created._id);
+      }
+      showSnackbar("Game created from schedule.", "success");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to create game";
+      setError(message);
+      showSnackbar(message, "error");
+    } finally {
+      setIsScheduleCreating(false);
+    }
+  };
+
+  useEffect(() => {
+    if (autoCreateRef.current) {
+      return;
+    }
+    if (gamesLoading || games.length > 0) {
+      return;
+    }
+    if (!normalizedTeamName) {
+      return;
+    }
+    if (!selectedGameId && sortedSchedule.length > 0) {
+      autoCreateRef.current = true;
+      void createGameFromSchedule(sortedSchedule[0]);
+    }
+  }, [games.length, gamesLoading, normalizedTeamName, selectedGameId, sortedSchedule, createGameFromSchedule]);
+
+  const handleStartGame = async () => {
+    if (!selectedGame) {
+      return;
+    }
+    setIsStatusUpdating(true);
+    try {
+      const token = await getToken();
+      if (!token) {
+        throw new Error("Missing session token");
+      }
+      const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
+      const response = await fetch(`${apiBase}/api/games/${selectedGame._id}/status`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ status: "live" })
+      });
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || "Failed to start game");
+      }
+      await refreshGames();
+      showSnackbar("Game marked live.", "success");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to start game";
+      setError(message);
+      showSnackbar(message, "error");
+    } finally {
+      setIsStatusUpdating(false);
     }
   };
 
@@ -1117,8 +1317,20 @@ export default function StatEntryPage({ gameId, onSelectGame, roster }: StatEntr
                 value={selectedGameId}
                 onChange={(event) => {
                   const nextId = event.target.value;
+                  if (typeof nextId !== "string") {
+                    return;
+                  }
+                  if (nextId.startsWith("schedule:")) {
+                    const scheduleId = nextId.replace("schedule:", "");
+                    const match = schedule.find((item) => item.id === scheduleId);
+                    if (match) {
+                      void createGameFromSchedule(match);
+                    }
+                    return;
+                  }
+
                   setSelectedGameId(nextId);
-                  if (typeof nextId === "string" && nextId && onSelectGame) {
+                  if (nextId && onSelectGame) {
                     onSelectGame(nextId);
                   }
                 }}
@@ -1131,28 +1343,59 @@ export default function StatEntryPage({ gameId, onSelectGame, roster }: StatEntr
                     </Box>
                   </MenuItem>
                 )}
-                {!gamesLoading && games.length === 0 && (
+                {!gamesLoading && games.length === 0 && schedule.length === 0 && (
                   <MenuItem value="" disabled>
                     No games available
                   </MenuItem>
                 )}
-                {games.map((game) => (
-                  <MenuItem key={game._id} value={game._id}>
-                    {game.homeTeam} vs {game.awayTeam} · {new Date(game.gameDate).toLocaleDateString()}
-                  </MenuItem>
-                ))}
+                {sortedSchedule.map((item) => {
+                  const match = scheduleMatches.get(item.id);
+                  const label = `vs ${item.opponent} · ${formatScheduleDate(item.dateTime)} · ${formatLocationLabel(item.location)}`;
+                  if (match) {
+                    return (
+                      <MenuItem key={`schedule-${item.id}`} value={match._id}>
+                        Scheduled: {label} · {match.status}
+                      </MenuItem>
+                    );
+                  }
+                  return (
+                    <MenuItem key={`schedule-${item.id}`} value={`schedule:${item.id}`}>
+                      Scheduled: {label}
+                    </MenuItem>
+                  );
+                })}
+                {games
+                  .filter((game) => !matchedGameIds.has(game._id))
+                  .map((game) => (
+                    <MenuItem key={game._id} value={game._id}>
+                      {game.homeTeam} vs {game.awayTeam} · {new Date(game.gameDate).toLocaleDateString()} · {game.status}
+                    </MenuItem>
+                  ))}
               </Select>
             </FormControl>
-            <Button
-              variant="contained"
-              onClick={() => {
-                setCreateErrors({});
-                setIsCreateOpen(true);
-              }}
-              sx={{ alignSelf: "flex-start" }}
-            >
-              Create Game
-            </Button>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+              {schedule.length === 0 && (
+                <Button
+                  variant="contained"
+                  onClick={() => {
+                    setCreateErrors({});
+                    setIsCreateOpen(true);
+                  }}
+                  sx={{ alignSelf: "flex-start" }}
+                >
+                  Create Game
+                </Button>
+              )}
+              {selectedGame?.status === "scheduled" && (
+                <Button
+                  variant="outlined"
+                  onClick={handleStartGame}
+                  disabled={isStatusUpdating || isScheduleCreating}
+                >
+                  {isStatusUpdating ? "Starting..." : "Start Game"}
+                </Button>
+              )}
+            </Stack>
           </Stack>
         </Paper>
         <GameBar {...gameState} />

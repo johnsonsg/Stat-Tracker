@@ -33,6 +33,8 @@ export default function GameTracker() {
     <StatEntryPage
       gameId={gameId ?? null}
       roster={teamData.players}
+      schedule={teamData.schedule}
+      teamName={teamData.teamName}
       onSelectGame={(id) => {
         navigate(`/games/${id}`);
       }}
