@@ -15,7 +15,7 @@ import {
 } from "@mui/material";
 import { styled, useTheme, type Theme } from "@mui/material/styles";
 import { OrganizationSwitcher, useOrganizationList } from "@clerk/clerk-react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import {
   ChevronLeft,
   ChevronRight,
@@ -23,6 +23,7 @@ import {
   LayoutDashboard,
   Menu,
   Settings,
+  User2,
   Users,
 } from "lucide-react";
 import ThemeToggle from "@/components/ThemeToggle";
@@ -97,16 +98,44 @@ const Drawer = styled(MuiDrawer, { shouldForwardProp: (prop) => prop !== "open" 
 type MiniVariantDrawerProps = {
   children: ReactNode;
   team?: TeamProfile;
+  teamName?: string | null;
 };
 
-export default function MiniVariantDrawer({ children, team }: MiniVariantDrawerProps) {
+export default function MiniVariantDrawer({ children, team, teamName }: MiniVariantDrawerProps) {
   const theme = useTheme();
+  const location = useLocation();
   const [open, setOpen] = useState(true);
   const { userMemberships, isLoaded } = useOrganizationList();
-  const displaySchool = team?.schoolName?.trim() || "Stat Tracker";
+  const displaySchool = teamName?.trim() || team?.schoolName?.trim() || "Stat Tracker";
   const displayMascot = team?.mascotName?.trim() || "";
   const teamInitial = displaySchool.slice(0, 1).toUpperCase();
   const showOrgSwitcher = isLoaded && (userMemberships?.data?.length ?? 0) > 1;
+  const appBarSubtitle = teamName?.trim() || null;
+
+  const navItems = [
+    { label: "Dashboard", icon: <LayoutDashboard size={20} />, to: "/dashboard" },
+    { label: "Game Tracker", icon: <Gamepad2 size={20} />, to: "/games" },
+    { label: "Players", icon: <Users size={20} />, to: "/players" },
+    { label: "Profile", icon: <User2 size={20} />, to: "/profile" }
+  ];
+
+  const getTitle = (pathname: string) => {
+    if (pathname.startsWith("/games")) {
+      return "Game Tracker";
+    }
+    if (pathname.startsWith("/players")) {
+      return "Players";
+    }
+    if (pathname.startsWith("/profile")) {
+      return "Profile";
+    }
+    if (pathname.startsWith("/organization")) {
+      return "Organization";
+    }
+    return "Dashboard";
+  };
+
+  const currentTitle = getTitle(location.pathname);
 
   const handleDrawerOpen = () => setOpen(true);
   const handleDrawerClose = () => setOpen(false);
@@ -125,9 +154,16 @@ export default function MiniVariantDrawer({ children, team }: MiniVariantDrawerP
           >
             <Menu size={20} />
           </IconButton>
-          <Typography variant="h6" noWrap sx={{ flexGrow: 1 }}>
-            Dashboard
-          </Typography>
+          <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+            <Typography variant="h6" noWrap>
+              {currentTitle}
+            </Typography>
+            {appBarSubtitle && (
+              <Typography variant="caption" color="text.secondary" noWrap>
+                {appBarSubtitle}
+              </Typography>
+            )}
+          </Box>
           {showOrgSwitcher && (
             <OrganizationSwitcher
               hidePersonal
@@ -206,15 +242,12 @@ export default function MiniVariantDrawer({ children, team }: MiniVariantDrawerP
         </DrawerHeader>
         <Divider />
         <List>
-          {[
-            { label: "Dashboard", icon: <LayoutDashboard size={20} />, to: "/" },
-            { label: "Game Tracker", icon: <Gamepad2 size={20} />, to: "/" },
-            { label: "Players", icon: <Users size={20} />, to: "/" },
-          ].map((item) => (
+          {navItems.map((item) => (
             <ListItemButton
               key={item.label}
               component={Link}
               to={item.to}
+              selected={location.pathname.startsWith(item.to)}
               sx={{
                 minHeight: 48,
                 px: 2.5,

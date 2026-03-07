@@ -1,12 +1,56 @@
 import { Box, Typography } from "@mui/material";
 import { SignedIn, SignedOut } from "@clerk/clerk-react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import Dashboard from "@/pages/Dashboard";
 import GameTracker from "@/pages/GameTracker";
+import Players from "@/pages/Players";
+import Profile from "@/pages/Profile";
 import MiniVariantDrawer from "@/components/MiniVariantDrawer";
 import { SignInPage, SignUpPage } from "@/pages/Auth";
 import OrganizationSettings from "@/pages/OrganizationSettings";
 import AutoSelectOrganization from "@/components/AutoSelectOrganization";
+import { TeamDataProvider } from "@/state/teamDataContext";
+import { useTeamData } from "@/state/useTeamData";
 import "./App.css";
+
+type AppShellProps = {
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+};
+
+type TeamDrawerProps = {
+  children: React.ReactNode;
+};
+
+function TeamDrawer({ children }: TeamDrawerProps) {
+  const { teamData } = useTeamData();
+  const teamName = teamData?.teamName ?? null;
+
+  return (
+    <MiniVariantDrawer teamName={teamName}>
+      {children}
+    </MiniVariantDrawer>
+  );
+}
+
+function AppShell({ title, description, children }: AppShellProps) {
+  return (
+    <TeamDrawer>
+      <Box sx={{ maxWidth: 1080 }}>
+        <Typography variant="h4" gutterBottom>
+          {title}
+        </Typography>
+        {description && (
+          <Typography variant="body1" color="text.secondary" gutterBottom>
+            {description}
+          </Typography>
+        )}
+        {children}
+      </Box>
+    </TeamDrawer>
+  );
+}
 
 function App() {
   return (
@@ -20,49 +64,66 @@ function App() {
       </SignedOut>
       <SignedIn>
         <AutoSelectOrganization />
-        <Routes>
-          <Route
-            path="/organization/*"
-            element={
-              <MiniVariantDrawer team={{ schoolName: "Manchester", mascotName: "Lancers" }}>
-                <OrganizationSettings />
-              </MiniVariantDrawer>
-            }
-          />
-          <Route
-            path="/"
-            element={
-              <MiniVariantDrawer team={{ schoolName: "Manchester", mascotName: "Lancers" }}>
-                <Box sx={{ maxWidth: 1080 }}>
-                  <Typography variant="h4" gutterBottom>
-                    Live Game Tracker
-                  </Typography>
-                  <Typography variant="body1" color="text.secondary" gutterBottom>
-                    Track plays in real time with MUI X.
-                  </Typography>
+        <TeamDataProvider>
+          <Routes>
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route
+              path="/dashboard"
+              element={
+                <AppShell title="Dashboard" description="Quick stats and recent activity.">
+                  <Dashboard />
+                </AppShell>
+              }
+            />
+            <Route
+              path="/organization/*"
+              element={
+                <TeamDrawer>
+                  <OrganizationSettings />
+                </TeamDrawer>
+              }
+            />
+            <Route
+              path="/games"
+              element={
+                <AppShell
+                  title="Live Game Tracker"
+                  description="Track plays in real time with MUI X."
+                >
                   <GameTracker />
-                </Box>
-              </MiniVariantDrawer>
-            }
-          />
-          <Route
-            path="/games/:gameId"
-            element={
-              <MiniVariantDrawer team={{ schoolName: "Manchester", mascotName: "Lancers" }}>
-                <Box sx={{ maxWidth: 1080 }}>
-                  <Typography variant="h4" gutterBottom>
-                    Live Game Tracker
-                  </Typography>
-                  <Typography variant="body1" color="text.secondary" gutterBottom>
-                    Track plays in real time with MUI X.
-                  </Typography>
+                </AppShell>
+              }
+            />
+            <Route
+              path="/games/:gameId"
+              element={
+                <AppShell
+                  title="Live Game Tracker"
+                  description="Track plays in real time with MUI X."
+                >
                   <GameTracker />
-                </Box>
-              </MiniVariantDrawer>
-            }
-          />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+                </AppShell>
+              }
+            />
+            <Route
+              path="/players"
+              element={
+                <AppShell title="Players" description="Manage rosters and player details.">
+                  <Players />
+                </AppShell>
+              }
+            />
+            <Route
+              path="/profile"
+              element={
+                <AppShell title="User Profile" description="Manage your account settings.">
+                  <Profile />
+                </AppShell>
+              }
+            />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </TeamDataProvider>
       </SignedIn>
     </BrowserRouter>
   );

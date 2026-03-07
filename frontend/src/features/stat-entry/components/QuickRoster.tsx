@@ -2,7 +2,7 @@ import { Stack, Button, Typography } from "@mui/material";
 
 type Player = {
   id: string;
-  number: number;
+  number: string;
   position: string;
   name: string;
 };

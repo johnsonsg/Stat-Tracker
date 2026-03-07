@@ -27,14 +27,8 @@ import PlayerSelector from "./components/PlayerSelector";
 import ResultSelector from "./components/ResultSelector";
 import PlayTimeline from "./components/PlayTimeline";
 import QuickRoster from "./components/QuickRoster";
+import type { TeamPlayer } from "@/types/teamData";
 import PlayConfirmationBanner from "./components/PlayConfirmationBanner";
-
-type Player = {
-  id: string;
-  number: number;
-  position: string;
-  name: string;
-};
 
 type PlaySummary = {
   id: string;
@@ -55,20 +49,10 @@ type PlaySummary = {
   turnover?: boolean;
 };
 
-const roster: Player[] = [
-  { id: "player_12", number: 12, position: "QB", name: "Carter" },
-  { id: "player_22", number: 22, position: "RB", name: "Hughes" },
-  { id: "player_88", number: 88, position: "WR", name: "Lopez" },
-  { id: "player_11", number: 11, position: "WR", name: "Stewart" },
-  { id: "player_32", number: 32, position: "TE", name: "Miller" },
-  { id: "player_5", number: 5, position: "RB", name: "Thomas" },
-  { id: "player_7", number: 7, position: "QB", name: "Smith" },
-  { id: "player_44", number: 44, position: "LB", name: "Reed" }
-];
-
 type StatEntryPageProps = {
   gameId: string | null;
   onSelectGame?: (gameId: string) => void;
+  roster: TeamPlayer[];
 };
 
 type GameSummary = {
@@ -108,14 +92,14 @@ type PendingPlay = {
   };
 };
 
-export default function StatEntryPage({ gameId, onSelectGame }: StatEntryPageProps) {
+export default function StatEntryPage({ gameId, onSelectGame, roster }: StatEntryPageProps) {
   const { getToken } = useAuth();
   const [playType, setPlayType] = useState<string | undefined>();
-  const [primaryPlayer, setPrimaryPlayer] = useState<Player | null>(null);
-  const [secondaryPlayer, setSecondaryPlayer] = useState<Player | null>(null);
+  const [primaryPlayer, setPrimaryPlayer] = useState<TeamPlayer | null>(null);
+  const [secondaryPlayer, setSecondaryPlayer] = useState<TeamPlayer | null>(null);
   const [plays, setPlays] = useState<PlaySummary[]>([]);
-  const [lastPrimary, setLastPrimary] = useState<Player | null>(null);
-  const [lastSecondary, setLastSecondary] = useState<Player | null>(null);
+  const [lastPrimary, setLastPrimary] = useState<TeamPlayer | null>(null);
+  const [lastSecondary, setLastSecondary] = useState<TeamPlayer | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [snackbar, setSnackbar] = useState<SnackbarState>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -160,7 +144,7 @@ export default function StatEntryPage({ gameId, onSelectGame }: StatEntryPagePro
 
   const quickPrimary = useMemo(() => (lastPrimary ? [lastPrimary] : []), [lastPrimary]);
   const quickSecondary = useMemo(() => (lastSecondary ? [lastSecondary] : []), [lastSecondary]);
-  const rosterById = useMemo(() => new Map(roster.map((player) => [player.id, player])), []);
+  const rosterById = useMemo(() => new Map(roster.map((player) => [player.id, player])), [roster]);
   const playTypeOptions = ["pass", "run", "sack", "punt", "fg", "penalty", "turnover"];
   const activeGameId = gameId ?? (selectedGameId || null);
 
