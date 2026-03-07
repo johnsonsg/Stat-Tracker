@@ -77,6 +77,11 @@ export default function OnboardingWizard({
     Boolean(savingScheduleId) ||
     Boolean(removingScheduleId);
 
+  const hasExistingTeamData = Boolean(
+    teamData.teamName?.trim() || teamData.players.length > 0 || teamData.schedule.length > 0
+  );
+  const showWizard = !hasExistingTeamData;
+
   const canContinue = useMemo(() => {
     if (activeStep === 0) {
       return Boolean(teamName.trim());
@@ -420,6 +425,242 @@ export default function OnboardingWizard({
     setActiveStep((prev) => prev + 1);
   };
 
+  const teamInfoSection = (
+    <Paper elevation={1} sx={{ p: 3 }}>
+      <Stack spacing={2}>
+        <Typography variant="subtitle1">Team info</Typography>
+        <TextField
+          label="Team name"
+          value={teamName}
+          onChange={(event) => setTeamName(event.target.value)}
+        />
+        {showWizard && (
+          <Button variant="outlined" onClick={saveTeamName} disabled={isSavingTeam}>
+            {isSavingTeam ? "Saving..." : "Save team info"}
+          </Button>
+        )}
+      </Stack>
+    </Paper>
+  );
+
+  const playersSection = (
+    <Paper elevation={1} sx={{ p: 3 }}>
+      <Stack spacing={2}>
+        <Typography variant="subtitle1">Add players</Typography>
+        <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+          <TextField
+            label="Name"
+            value={playerForm.name}
+            onChange={(event) => setPlayerForm((prev) => ({ ...prev, name: event.target.value }))}
+          />
+          <TextField
+            label="Number"
+            value={playerForm.number}
+            onChange={(event) => setPlayerForm((prev) => ({ ...prev, number: event.target.value }))}
+          />
+          <TextField
+            label="Position"
+            value={playerForm.position}
+            onChange={(event) => setPlayerForm((prev) => ({ ...prev, position: event.target.value }))}
+          />
+          <Button variant="contained" onClick={addPlayer} disabled={isAddingPlayer}>
+            {isAddingPlayer ? "Adding..." : "Add"}
+          </Button>
+        </Stack>
+        <Divider />
+        {localTeamData.players.length === 0 ? (
+          <Typography variant="body2" color="text.secondary">
+            No players added yet.
+          </Typography>
+        ) : (
+          <Stack spacing={1}>
+            {localTeamData.players.map((player) => (
+              <Box key={player.id} sx={{ display: "flex", justifyContent: "space-between" }}>
+                {editingPlayerId === player.id ? (
+                  <Stack direction={{ xs: "column", md: "row" }} spacing={1} sx={{ flex: 1 }}>
+                    <TextField
+                      label="Name"
+                      size="small"
+                      value={editingPlayerForm.name}
+                      onChange={(event) =>
+                        setEditingPlayerForm((prev) => ({ ...prev, name: event.target.value }))
+                      }
+                    />
+                    <TextField
+                      label="Number"
+                      size="small"
+                      value={editingPlayerForm.number}
+                      onChange={(event) =>
+                        setEditingPlayerForm((prev) => ({ ...prev, number: event.target.value }))
+                      }
+                    />
+                    <TextField
+                      label="Position"
+                      size="small"
+                      value={editingPlayerForm.position}
+                      onChange={(event) =>
+                        setEditingPlayerForm((prev) => ({ ...prev, position: event.target.value }))
+                      }
+                    />
+                  </Stack>
+                ) : (
+                  <Typography>
+                    #{player.number} {player.name} · {player.position}
+                  </Typography>
+                )}
+                <Stack direction="row" spacing={1}>
+                  {editingPlayerId === player.id ? (
+                    <>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={savePlayerEdit}
+                        disabled={savingPlayerId === player.id}
+                      >
+                        {savingPlayerId === player.id ? "Saving..." : "Save"}
+                      </Button>
+                      <Button size="small" onClick={() => setEditingPlayerId(null)}>
+                        Cancel
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button size="small" onClick={() => startEditPlayer(player)}>
+                        Edit
+                      </Button>
+                      <Button
+                        size="small"
+                        color="error"
+                        onClick={() => removePlayer(player.id)}
+                        disabled={removingPlayerId === player.id}
+                      >
+                        {removingPlayerId === player.id ? "Deleting..." : "Delete"}
+                      </Button>
+                    </>
+                  )}
+                </Stack>
+              </Box>
+            ))}
+          </Stack>
+        )}
+      </Stack>
+    </Paper>
+  );
+
+  const scheduleSection = (
+    <Paper elevation={1} sx={{ p: 3 }}>
+      <Stack spacing={2}>
+        <Typography variant="subtitle1">Add schedule</Typography>
+        <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+          <TextField
+            label="Opponent"
+            value={scheduleForm.opponent}
+            onChange={(event) =>
+              setScheduleForm((prev) => ({ ...prev, opponent: event.target.value }))
+            }
+          />
+          <TextField
+            label="Date & time"
+            type="datetime-local"
+            InputLabelProps={{ shrink: true }}
+            value={scheduleForm.dateTime}
+            onChange={(event) =>
+              setScheduleForm((prev) => ({ ...prev, dateTime: event.target.value }))
+            }
+          />
+          <TextField
+            label="Location"
+            value={scheduleForm.location}
+            onChange={(event) =>
+              setScheduleForm((prev) => ({ ...prev, location: event.target.value }))
+            }
+          />
+          <Button variant="contained" onClick={addScheduleGame} disabled={isAddingSchedule}>
+            {isAddingSchedule ? "Adding..." : "Add"}
+          </Button>
+        </Stack>
+        <Divider />
+        {localTeamData.schedule.length === 0 ? (
+          <Typography variant="body2" color="text.secondary">
+            No games scheduled yet.
+          </Typography>
+        ) : (
+          <Stack spacing={1}>
+            {localTeamData.schedule.map((game) => (
+              <Box key={game.id} sx={{ display: "flex", justifyContent: "space-between" }}>
+                {editingScheduleId === game.id ? (
+                  <Stack direction={{ xs: "column", md: "row" }} spacing={1} sx={{ flex: 1 }}>
+                    <TextField
+                      label="Opponent"
+                      size="small"
+                      value={editingScheduleForm.opponent}
+                      onChange={(event) =>
+                        setEditingScheduleForm((prev) => ({ ...prev, opponent: event.target.value }))
+                      }
+                    />
+                    <TextField
+                      label="Date & time"
+                      type="datetime-local"
+                      size="small"
+                      InputLabelProps={{ shrink: true }}
+                      value={editingScheduleForm.dateTime}
+                      onChange={(event) =>
+                        setEditingScheduleForm((prev) => ({ ...prev, dateTime: event.target.value }))
+                      }
+                    />
+                    <TextField
+                      label="Location"
+                      size="small"
+                      value={editingScheduleForm.location}
+                      onChange={(event) =>
+                        setEditingScheduleForm((prev) => ({ ...prev, location: event.target.value }))
+                      }
+                    />
+                  </Stack>
+                ) : (
+                  <Typography>
+                    {game.opponent} · {new Date(game.dateTime).toLocaleString()} · {game.location}
+                  </Typography>
+                )}
+                <Stack direction="row" spacing={1}>
+                  {editingScheduleId === game.id ? (
+                    <>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={saveScheduleEdit}
+                        disabled={savingScheduleId === game.id}
+                      >
+                        {savingScheduleId === game.id ? "Saving..." : "Save"}
+                      </Button>
+                      <Button size="small" onClick={() => setEditingScheduleId(null)}>
+                        Cancel
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button size="small" onClick={() => startEditSchedule(game)}>
+                        Edit
+                      </Button>
+                      <Button
+                        size="small"
+                        color="error"
+                        onClick={() => removeScheduleGame(game.id)}
+                        disabled={removingScheduleId === game.id}
+                      >
+                        {removingScheduleId === game.id ? "Deleting..." : "Delete"}
+                      </Button>
+                    </>
+                  )}
+                </Stack>
+              </Box>
+            ))}
+          </Stack>
+        )}
+      </Stack>
+    </Paper>
+  );
+
   return (
     <Stack spacing={3}>
       {error && <Alert severity="error">{error}</Alert>}
@@ -428,10 +669,12 @@ export default function OnboardingWizard({
           <Box sx={{ display: "flex", justifyContent: "space-between", gap: 2 }}>
             <Box>
               <Typography variant="h5" gutterBottom>
-                Setup your team
+                {hasExistingTeamData ? "Edit your team" : "Set up your team"}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Add team info, roster, and schedule to start tracking games.
+                {hasExistingTeamData
+                  ? "Update team info, roster, and schedule as needed."
+                  : "Add team info, roster, and schedule to start tracking games."}
               </Typography>
             </Box>
             <Stack direction="row" spacing={1} alignItems="center">
@@ -441,266 +684,49 @@ export default function OnboardingWizard({
               </Button>
             </Stack>
           </Box>
-          <Stepper activeStep={activeStep} alternativeLabel>
-            {steps.map((label) => (
-              <Step key={label}>
-                <StepLabel>{label}</StepLabel>
-              </Step>
-            ))}
-          </Stepper>
+          {showWizard && (
+            <Stepper activeStep={activeStep} alternativeLabel>
+              {steps.map((label) => (
+                <Step key={label}>
+                  <StepLabel>{label}</StepLabel>
+                </Step>
+              ))}
+            </Stepper>
+          )}
         </Stack>
       </Paper>
 
-      {activeStep === 0 && (
-        <Paper elevation={1} sx={{ p: 3 }}>
-          <Stack spacing={2}>
-            <Typography variant="subtitle1">Team info</Typography>
-            <TextField
-              label="Team name"
-              value={teamName}
-              onChange={(event) => setTeamName(event.target.value)}
-            />
-          </Stack>
-        </Paper>
+      {showWizard ? (
+        <>
+          {activeStep === 0 && teamInfoSection}
+          {activeStep === 1 && playersSection}
+          {activeStep === 2 && scheduleSection}
+        </>
+      ) : (
+        <>
+          {teamInfoSection}
+          {playersSection}
+          {scheduleSection}
+        </>
       )}
 
-      {activeStep === 1 && (
-        <Paper elevation={1} sx={{ p: 3 }}>
-          <Stack spacing={2}>
-            <Typography variant="subtitle1">Add players</Typography>
-            <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
-              <TextField
-                label="Name"
-                value={playerForm.name}
-                onChange={(event) => setPlayerForm((prev) => ({ ...prev, name: event.target.value }))}
-              />
-              <TextField
-                label="Number"
-                value={playerForm.number}
-                onChange={(event) =>
-                  setPlayerForm((prev) => ({ ...prev, number: event.target.value }))
-                }
-              />
-              <TextField
-                label="Position"
-                value={playerForm.position}
-                onChange={(event) =>
-                  setPlayerForm((prev) => ({ ...prev, position: event.target.value }))
-                }
-              />
-              <Button variant="contained" onClick={addPlayer} disabled={isAddingPlayer}>
-                {isAddingPlayer ? "Adding..." : "Add"}
-              </Button>
-            </Stack>
-            <Divider />
-            {localTeamData.players.length === 0 ? (
-              <Typography variant="body2" color="text.secondary">
-                No players added yet.
-              </Typography>
-            ) : (
-              <Stack spacing={1}>
-                {localTeamData.players.map((player) => (
-                  <Box key={player.id} sx={{ display: "flex", justifyContent: "space-between" }}>
-                    {editingPlayerId === player.id ? (
-                      <Stack direction={{ xs: "column", md: "row" }} spacing={1} sx={{ flex: 1 }}>
-                        <TextField
-                          label="Name"
-                          size="small"
-                          value={editingPlayerForm.name}
-                          onChange={(event) =>
-                            setEditingPlayerForm((prev) => ({ ...prev, name: event.target.value }))
-                          }
-                        />
-                        <TextField
-                          label="Number"
-                          size="small"
-                          value={editingPlayerForm.number}
-                          onChange={(event) =>
-                            setEditingPlayerForm((prev) => ({ ...prev, number: event.target.value }))
-                          }
-                        />
-                        <TextField
-                          label="Position"
-                          size="small"
-                          value={editingPlayerForm.position}
-                          onChange={(event) =>
-                            setEditingPlayerForm((prev) => ({ ...prev, position: event.target.value }))
-                          }
-                        />
-                      </Stack>
-                    ) : (
-                      <Typography>
-                        #{player.number} {player.name} · {player.position}
-                      </Typography>
-                    )}
-                    <Stack direction="row" spacing={1}>
-                      {editingPlayerId === player.id ? (
-                        <>
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            onClick={savePlayerEdit}
-                            disabled={savingPlayerId === player.id}
-                          >
-                            {savingPlayerId === player.id ? "Saving..." : "Save"}
-                          </Button>
-                          <Button size="small" onClick={() => setEditingPlayerId(null)}>
-                            Cancel
-                          </Button>
-                        </>
-                      ) : (
-                        <>
-                          <Button size="small" onClick={() => startEditPlayer(player)}>
-                            Edit
-                          </Button>
-                          <Button
-                            size="small"
-                            color="error"
-                            onClick={() => removePlayer(player.id)}
-                            disabled={removingPlayerId === player.id}
-                          >
-                            {removingPlayerId === player.id ? "Deleting..." : "Delete"}
-                          </Button>
-                        </>
-                      )}
-                    </Stack>
-                  </Box>
-                ))}
-              </Stack>
-            )}
-          </Stack>
-        </Paper>
+      {showWizard && (
+        <Box sx={{ display: "flex", justifyContent: "space-between" }}>
+          <Button
+            disabled={activeStep === 0}
+            onClick={() => setActiveStep((prev) => prev - 1)}
+          >
+            Back
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleNext}
+            disabled={!canContinue || isSavingTeam}
+          >
+            {isSavingTeam ? "Saving..." : activeStep === steps.length - 1 ? "Finish" : "Continue"}
+          </Button>
+        </Box>
       )}
-
-      {activeStep === 2 && (
-        <Paper elevation={1} sx={{ p: 3 }}>
-          <Stack spacing={2}>
-            <Typography variant="subtitle1">Add schedule</Typography>
-            <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
-              <TextField
-                label="Opponent"
-                value={scheduleForm.opponent}
-                onChange={(event) =>
-                  setScheduleForm((prev) => ({ ...prev, opponent: event.target.value }))
-                }
-              />
-              <TextField
-                label="Date & time"
-                type="datetime-local"
-                InputLabelProps={{ shrink: true }}
-                value={scheduleForm.dateTime}
-                onChange={(event) =>
-                  setScheduleForm((prev) => ({ ...prev, dateTime: event.target.value }))
-                }
-              />
-              <TextField
-                label="Location"
-                value={scheduleForm.location}
-                onChange={(event) =>
-                  setScheduleForm((prev) => ({ ...prev, location: event.target.value }))
-                }
-              />
-              <Button variant="contained" onClick={addScheduleGame} disabled={isAddingSchedule}>
-                {isAddingSchedule ? "Adding..." : "Add"}
-              </Button>
-            </Stack>
-            <Divider />
-            {localTeamData.schedule.length === 0 ? (
-              <Typography variant="body2" color="text.secondary">
-                No games scheduled yet.
-              </Typography>
-            ) : (
-              <Stack spacing={1}>
-                {localTeamData.schedule.map((game) => (
-                  <Box key={game.id} sx={{ display: "flex", justifyContent: "space-between" }}>
-                    {editingScheduleId === game.id ? (
-                      <Stack direction={{ xs: "column", md: "row" }} spacing={1} sx={{ flex: 1 }}>
-                        <TextField
-                          label="Opponent"
-                          size="small"
-                          value={editingScheduleForm.opponent}
-                          onChange={(event) =>
-                            setEditingScheduleForm((prev) => ({ ...prev, opponent: event.target.value }))
-                          }
-                        />
-                        <TextField
-                          label="Date & time"
-                          type="datetime-local"
-                          size="small"
-                          InputLabelProps={{ shrink: true }}
-                          value={editingScheduleForm.dateTime}
-                          onChange={(event) =>
-                            setEditingScheduleForm((prev) => ({ ...prev, dateTime: event.target.value }))
-                          }
-                        />
-                        <TextField
-                          label="Location"
-                          size="small"
-                          value={editingScheduleForm.location}
-                          onChange={(event) =>
-                            setEditingScheduleForm((prev) => ({ ...prev, location: event.target.value }))
-                          }
-                        />
-                      </Stack>
-                    ) : (
-                      <Typography>
-                        {game.opponent} · {new Date(game.dateTime).toLocaleString()} · {game.location}
-                      </Typography>
-                    )}
-                    <Stack direction="row" spacing={1}>
-                      {editingScheduleId === game.id ? (
-                        <>
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            onClick={saveScheduleEdit}
-                            disabled={savingScheduleId === game.id}
-                          >
-                            {savingScheduleId === game.id ? "Saving..." : "Save"}
-                          </Button>
-                          <Button size="small" onClick={() => setEditingScheduleId(null)}>
-                            Cancel
-                          </Button>
-                        </>
-                      ) : (
-                        <>
-                          <Button size="small" onClick={() => startEditSchedule(game)}>
-                            Edit
-                          </Button>
-                          <Button
-                            size="small"
-                            color="error"
-                            onClick={() => removeScheduleGame(game.id)}
-                            disabled={removingScheduleId === game.id}
-                          >
-                            {removingScheduleId === game.id ? "Deleting..." : "Delete"}
-                          </Button>
-                        </>
-                      )}
-                    </Stack>
-                  </Box>
-                ))}
-              </Stack>
-            )}
-          </Stack>
-        </Paper>
-      )}
-
-      <Box sx={{ display: "flex", justifyContent: "space-between" }}>
-        <Button
-          disabled={activeStep === 0}
-          onClick={() => setActiveStep((prev) => prev - 1)}
-        >
-          Back
-        </Button>
-        <Button
-          variant="contained"
-          onClick={handleNext}
-          disabled={!canContinue || isSavingTeam}
-        >
-          {isSavingTeam ? "Saving..." : activeStep === steps.length - 1 ? "Finish" : "Continue"}
-        </Button>
-      </Box>
     </Stack>
   );
 }

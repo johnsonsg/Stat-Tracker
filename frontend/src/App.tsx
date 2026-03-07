@@ -5,6 +5,7 @@ import Dashboard from "@/pages/Dashboard";
 import GameTracker from "@/pages/GameTracker";
 import Players from "@/pages/Players";
 import Profile from "@/pages/Profile";
+import RosterSchedule from "@/pages/RosterSchedule";
 import Team from "@/pages/Team";
 import MiniVariantDrawer from "@/components/MiniVariantDrawer";
 import { SignInPage, SignUpPage } from "@/pages/Auth";
@@ -109,15 +110,23 @@ function App() {
             <Route
               path="/players"
               element={
-                <AppShell title="Players" description="Manage rosters and player details.">
+                <AppShell title="Player Stats" description="Stat totals by game.">
                   <Players />
+                </AppShell>
+              }
+            />
+            <Route
+              path="/roster"
+              element={
+                <AppShell title="Roster & Schedule" description="Roster and schedule from team data.">
+                  <RosterSchedule />
                 </AppShell>
               }
             />
             <Route
               path="/team"
               element={
-                <AppShell title="Team" description="Manage team info, roster, and schedule.">
+                <AppShell title="Team Management" description="Edit team info, roster, and schedule.">
                   <Team />
                 </AppShell>
               }

@@ -136,7 +136,7 @@ export default function Players() {
               Player stats by game
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Select a game to review player stat totals.
+              Select a tracked game to review stat totals. Roster lives in Roster & Schedule.
             </Typography>
           </Box>
           <FormControl fullWidth size="small">

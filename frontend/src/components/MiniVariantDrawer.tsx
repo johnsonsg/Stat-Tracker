@@ -190,8 +190,9 @@ export default function MiniVariantDrawer({ children, team, teamName }: MiniVari
   const navItems = [
     { label: "Dashboard", icon: <LayoutDashboard size={20} />, to: "/dashboard" },
     { label: "Game Tracker", icon: <Gamepad2 size={20} />, to: "/games" },
-    { label: "Team", icon: <Settings size={20} />, to: "/team" },
-    { label: "Players", icon: <Users size={20} />, to: "/players" },
+    { label: "Roster & Schedule", icon: <Users size={20} />, to: "/roster" },
+    { label: "Team Management", icon: <Settings size={20} />, to: "/team" },
+    { label: "Player Stats", icon: <Users size={20} />, to: "/players" },
     { label: "Profile", icon: <User2 size={20} />, to: "/profile" }
   ];
 
@@ -200,10 +201,13 @@ export default function MiniVariantDrawer({ children, team, teamName }: MiniVari
       return "Game Tracker";
     }
     if (pathname.startsWith("/players")) {
-      return "Players";
+      return "Player Stats";
+    }
+    if (pathname.startsWith("/roster")) {
+      return "Roster & Schedule";
     }
     if (pathname.startsWith("/team")) {
-      return "Team";
+      return "Team Management";
     }
     if (pathname.startsWith("/profile")) {
       return "Profile";
