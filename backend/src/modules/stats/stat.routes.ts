@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { getTenantId } from "../../utils/getTenant";
+import { requireOrgRole } from "../../middleware/authorization";
 import {
   getTeamGameStats,
   listPlayerGameStats,
@@ -73,6 +74,7 @@ const teamGameSchema = z.object({
  */
 router.post(
   "/player-game",
+  requireOrgRole(["org:admin", "org:member"]),
   asyncHandler(async (req, res) => {
     const tenantId = getTenantId(req);
 
@@ -152,6 +154,7 @@ router.get(
  */
 router.post(
   "/team-game",
+  requireOrgRole(["org:admin", "org:member"]),
   asyncHandler(async (req, res) => {
     const tenantId = getTenantId(req);
 

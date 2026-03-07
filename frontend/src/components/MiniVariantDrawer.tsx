@@ -14,6 +14,8 @@ import {
   Typography,
 } from "@mui/material";
 import { styled, useTheme, type Theme } from "@mui/material/styles";
+import { OrganizationSwitcher, useOrganizationList } from "@clerk/clerk-react";
+import { Link } from "react-router-dom";
 import {
   ChevronLeft,
   ChevronRight,
@@ -100,9 +102,11 @@ type MiniVariantDrawerProps = {
 export default function MiniVariantDrawer({ children, team }: MiniVariantDrawerProps) {
   const theme = useTheme();
   const [open, setOpen] = useState(true);
+  const { userMemberships, isLoaded } = useOrganizationList();
   const displaySchool = team?.schoolName?.trim() || "Stat Tracker";
   const displayMascot = team?.mascotName?.trim() || "";
   const teamInitial = displaySchool.slice(0, 1).toUpperCase();
+  const showOrgSwitcher = isLoaded && (userMemberships?.data?.length ?? 0) > 1;
 
   const handleDrawerOpen = () => setOpen(true);
   const handleDrawerClose = () => setOpen(false);
@@ -124,6 +128,16 @@ export default function MiniVariantDrawer({ children, team }: MiniVariantDrawerP
           <Typography variant="h6" noWrap sx={{ flexGrow: 1 }}>
             Dashboard
           </Typography>
+          {showOrgSwitcher && (
+            <OrganizationSwitcher
+              hidePersonal
+              appearance={{
+                elements: {
+                  rootBox: { display: "flex" },
+                },
+              }}
+            />
+          )}
           <ThemeToggle />
         </Toolbar>
       </AppBar>
@@ -193,12 +207,14 @@ export default function MiniVariantDrawer({ children, team }: MiniVariantDrawerP
         <Divider />
         <List>
           {[
-            { label: "Dashboard", icon: <LayoutDashboard size={20} /> },
-            { label: "Game Tracker", icon: <Gamepad2 size={20} /> },
-            { label: "Players", icon: <Users size={20} /> },
+            { label: "Dashboard", icon: <LayoutDashboard size={20} />, to: "/" },
+            { label: "Game Tracker", icon: <Gamepad2 size={20} />, to: "/" },
+            { label: "Players", icon: <Users size={20} />, to: "/" },
           ].map((item) => (
             <ListItemButton
               key={item.label}
+              component={Link}
+              to={item.to}
               sx={{
                 minHeight: 48,
                 px: 2.5,
@@ -221,6 +237,8 @@ export default function MiniVariantDrawer({ children, team }: MiniVariantDrawerP
         <Divider />
         <List>
           <ListItemButton
+            component={Link}
+            to="/organization"
             sx={{
               minHeight: 48,
               px: 2.5,
@@ -236,7 +254,7 @@ export default function MiniVariantDrawer({ children, team }: MiniVariantDrawerP
             >
               <Settings size={20} />
             </ListItemIcon>
-            <ListItemText primary="Settings" sx={{ opacity: open ? 1 : 0 }} />
+            <ListItemText primary="Organization" sx={{ opacity: open ? 1 : 0 }} />
           </ListItemButton>
         </List>
       </Drawer>

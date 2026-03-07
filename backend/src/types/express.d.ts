@@ -6,6 +6,8 @@ declare module "express-serve-static-core" {
     auth?: {
       userId?: string | null;
       orgId?: string | null;
+      orgRole?: string | null;
+      orgPermissions?: string[] | null;
     };
   }
 }

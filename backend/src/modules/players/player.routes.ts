@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { createPlayerHandler, listPlayersHandler } from "./player.controller";
+import { requireOrgRole } from "../../middleware/authorization";
 
 const router = Router();
 
@@ -48,6 +49,6 @@ router.get("/", asyncHandler(listPlayersHandler));
  *       201:
  *         description: Player created
  */
-router.post("/", asyncHandler(createPlayerHandler));
+router.post("/", requireOrgRole(["org:admin", "org:member"]), asyncHandler(createPlayerHandler));
 
 export default router;
