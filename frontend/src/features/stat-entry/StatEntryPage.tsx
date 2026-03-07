@@ -787,7 +787,7 @@ export default function StatEntryPage({ gameId, onSelectGame, roster }: StatEntr
     }
   };
 
-  const handleSave = async (result: string) => {
+  const handleSave = useCallback(async (result: string) => {
     if (!playType || !primaryPlayer) {
       return;
     }
@@ -858,7 +858,22 @@ export default function StatEntryPage({ gameId, onSelectGame, roster }: StatEntr
     }, 3000);
     setSecondaryPlayer(null);
     setIsSaving(false);
-  };
+  }, [
+    activeGameId,
+    buildPlayLabel,
+    clearPendingTimer,
+    finalizePendingPlay,
+    gameState.clock,
+    gameState.distance,
+    gameState.down,
+    gameState.quarter,
+    gameState.yardLine,
+    pendingPlay,
+    playType,
+    primaryPlayer,
+    secondaryPlayer,
+    showSnackbar
+  ]);
 
   const selectPlayType = useCallback(
     (nextType: string) => {
