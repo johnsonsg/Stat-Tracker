@@ -1,7 +1,8 @@
 import { useEffect } from "react";
-import { useOrganizationList } from "@clerk/clerk-react";
+import { useOrganization, useOrganizationList } from "@clerk/clerk-react";
 
 export default function AutoSelectOrganization() {
+  const { organization } = useOrganization();
   const { userMemberships, setActive, isLoaded } = useOrganizationList();
 
   useEffect(() => {
@@ -9,11 +10,15 @@ export default function AutoSelectOrganization() {
       return;
     }
 
+    if (organization?.id) {
+      return;
+    }
+
     const memberships = userMemberships?.data ?? [];
-    if (memberships.length === 1) {
+    if (memberships.length >= 1) {
       void setActive({ organization: memberships[0].organization.id });
     }
-  }, [isLoaded, setActive, userMemberships]);
+  }, [isLoaded, organization?.id, setActive, userMemberships]);
 
   return null;
 }

@@ -3,6 +3,7 @@ import { asyncHandler } from "../../utils/asyncHandler";
 import {
   addPlayerHandler,
   addScheduleGameHandler,
+  getTeamDataDebugHandler,
   getTeamDataHandler,
   removePlayerHandler,
   removeScheduleGameHandler,
@@ -15,6 +16,7 @@ import { requireOrgRole } from "../../middleware/authorization";
 const router = Router();
 
 router.get("/team-data", asyncHandler(getTeamDataHandler));
+router.get("/team-data/debug", asyncHandler(getTeamDataDebugHandler));
 router.put("/team-data", requireOrgRole(["org:admin", "org:member"]), asyncHandler(updateTeamDataHandler));
 
 router.post("/team/players", requireOrgRole(["org:admin", "org:member"]), asyncHandler(addPlayerHandler));

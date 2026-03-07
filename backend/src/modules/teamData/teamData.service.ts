@@ -1,37 +1,112 @@
 import { randomUUID } from "node:crypto";
-import { TeamData, type TeamDataDocument } from "./teamData.model";
+import mongoose from "mongoose";
 import type { CreatePlayerInput, CreateScheduleInput, TeamDataInput } from "./teamData.types";
+import { TenantSettings, type TenantSettingsDocument } from "./tenantSettings.model";
+
+type TenantPlayer = NonNullable<TenantSettingsDocument["players"]>[number];
+type TenantScheduleGame = NonNullable<NonNullable<TenantSettingsDocument["schedule"]>["games"]>[number];
+
+const slugify = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+
+const mapPlayer = (player: TenantPlayer) => ({
+  id: player.id,
+  name: player.name,
+  number: player.number,
+  position: player.position
+});
+
+const mapScheduleGame = (game: TenantScheduleGame) => ({
+  id: game.id,
+  opponent: game.opponent,
+  dateTime: game.dateTime,
+  location: game.location
+});
+
+const buildTenantPlayer = (input: CreatePlayerInput) => {
+  const slug = slugify(input.name) || randomUUID();
+  return {
+    accolades: [],
+    bio: "",
+    headshotLastError: null,
+    headshotOriginalKey: "",
+    headshotProcessedKey: "",
+    headshotStatus: "",
+    headshotUploadId: "",
+    height: "",
+    hudlUrl: "",
+    id: randomUUID(),
+    image: new mongoose.Types.ObjectId(),
+    name: input.name,
+    number: input.number,
+    position: input.position,
+    positionGroup: [input.position],
+    slug,
+    sortOrder: 0,
+    spotlight: false,
+    stats: "",
+    weight: "",
+    year: ""
+  };
+};
+
+const buildTenantScheduleGame = (input: CreateScheduleInput) => ({
+  id: randomUUID(),
+  opponent: input.opponent,
+  dateTime: input.dateTime,
+  location: input.location,
+  outcome: "",
+  result: "",
+  status: "scheduled"
+});
 
 export async function getTeamData(tenantId: string) {
-  const data = await TeamData.findOne({ tenantId }).lean<TeamDataDocument>();
+  const data = await TenantSettings.findOne({ tenantId }).lean<TenantSettingsDocument>();
   if (!data) {
     return { teamName: null, players: [], schedule: [] };
   }
-  return data;
+  return {
+    teamName: data.metadata?.teamName ?? null,
+    players: (data.players ?? []).map(mapPlayer),
+    schedule: (data.schedule?.games ?? []).map(mapScheduleGame)
+  };
 }
 
 export async function updateTeamData(tenantId: string, input: TeamDataInput) {
-  const data = await TeamData.findOneAndUpdate(
+  const updates: Record<string, unknown> = {};
+  if (typeof input.teamName === "string") {
+    updates["metadata.teamName"] = input.teamName;
+  }
+
+  const data = await TenantSettings.findOneAndUpdate(
     { tenantId },
-    { $set: input, $setOnInsert: { players: [], schedule: [] } },
-    { new: true, upsert: true }
-  ).lean<TeamDataDocument>();
+    { $set: updates },
+    { new: true }
+  ).lean<TenantSettingsDocument>();
 
   if (!data) {
     return { teamName: input.teamName ?? null, players: [], schedule: [] };
   }
-  return data;
+  return {
+    teamName: data.metadata?.teamName ?? null,
+    players: (data.players ?? []).map(mapPlayer),
+    schedule: (data.schedule?.games ?? []).map(mapScheduleGame)
+  };
 }
 
 export async function addPlayer(tenantId: string, input: CreatePlayerInput) {
-  const player = { id: randomUUID(), ...input };
-  const data = await TeamData.findOneAndUpdate(
-    { tenantId },
-    { $push: { players: player }, $setOnInsert: { teamName: null, schedule: [] } },
-    { new: true, upsert: true }
-  ).lean<TeamDataDocument>();
+  const existing = await TenantSettings.findOne({ tenantId }).lean<TenantSettingsDocument>();
+  if (!existing) {
+    throw new Error("Team data not found");
+  }
 
-  return { player, data };
+  const player = buildTenantPlayer(input);
+  await TenantSettings.updateOne({ tenantId }, { $push: { players: player } });
+  return { player: mapPlayer(player), data: existing };
 }
 
 export async function updatePlayer(
@@ -39,7 +114,7 @@ export async function updatePlayer(
   playerId: string,
   input: CreatePlayerInput
 ) {
-  const existing = await TeamData.findOne({ tenantId }).lean<TeamDataDocument>();
+  const existing = await TenantSettings.findOne({ tenantId }).lean<TenantSettingsDocument>();
   if (!existing) {
     throw new Error("Team data not found");
   }
@@ -49,49 +124,50 @@ export async function updatePlayer(
     throw new Error("Player not found");
   }
 
-  await TeamData.updateOne(
+  await TenantSettings.updateOne(
     { tenantId, "players.id": playerId },
     {
       $set: {
         "players.$.name": input.name,
         "players.$.number": input.number,
-        "players.$.position": input.position
+        "players.$.position": input.position,
+        "players.$.positionGroup": [input.position]
       }
     }
   );
 
-  const updated = await TeamData.findOne({ tenantId }).lean<TeamDataDocument>();
+  const updated = await TenantSettings.findOne({ tenantId }).lean<TenantSettingsDocument>();
   const player = updated?.players.find((item) => item.id === playerId);
   if (!player) {
     throw new Error("Player not found");
   }
 
-  return player;
+  return mapPlayer(player);
 }
 
 export async function removePlayer(tenantId: string, playerId: string) {
-  const data = await TeamData.findOneAndUpdate(
+  const data = await TenantSettings.findOneAndUpdate(
     { tenantId },
     { $pull: { players: { id: playerId } } },
     { new: true }
-  ).lean<TeamDataDocument>();
+  ).lean<TenantSettingsDocument>();
 
   if (!data) {
     throw new Error("Team data not found");
   }
 
-  return data.players;
+  return (data.players ?? []).map(mapPlayer);
 }
 
 export async function addScheduleGame(tenantId: string, input: CreateScheduleInput) {
-  const scheduleGame = { id: randomUUID(), ...input };
-  const data = await TeamData.findOneAndUpdate(
-    { tenantId },
-    { $push: { schedule: scheduleGame }, $setOnInsert: { teamName: null, players: [] } },
-    { new: true, upsert: true }
-  ).lean<TeamDataDocument>();
+  const existing = await TenantSettings.findOne({ tenantId }).lean<TenantSettingsDocument>();
+  if (!existing) {
+    throw new Error("Team data not found");
+  }
 
-  return { scheduleGame, data };
+  const scheduleGame = buildTenantScheduleGame(input);
+  await TenantSettings.updateOne({ tenantId }, { $push: { "schedule.games": scheduleGame } });
+  return { scheduleGame: mapScheduleGame(scheduleGame), data: existing };
 }
 
 export async function updateScheduleGame(
@@ -99,46 +175,46 @@ export async function updateScheduleGame(
   gameId: string,
   input: CreateScheduleInput
 ) {
-  const existing = await TeamData.findOne({ tenantId }).lean<TeamDataDocument>();
+  const existing = await TenantSettings.findOne({ tenantId }).lean<TenantSettingsDocument>();
   if (!existing) {
     throw new Error("Team data not found");
   }
 
-  const gameIndex = existing.schedule.findIndex((game) => game.id === gameId);
+  const gameIndex = existing.schedule?.games?.findIndex((game) => game.id === gameId) ?? -1;
   if (gameIndex === -1) {
     throw new Error("Schedule game not found");
   }
 
-  await TeamData.updateOne(
-    { tenantId, "schedule.id": gameId },
+  await TenantSettings.updateOne(
+    { tenantId, "schedule.games.id": gameId },
     {
       $set: {
-        "schedule.$.opponent": input.opponent,
-        "schedule.$.dateTime": input.dateTime,
-        "schedule.$.location": input.location
+        "schedule.games.$.opponent": input.opponent,
+        "schedule.games.$.dateTime": input.dateTime,
+        "schedule.games.$.location": input.location
       }
     }
   );
 
-  const updated = await TeamData.findOne({ tenantId }).lean<TeamDataDocument>();
-  const scheduleGame = updated?.schedule.find((item) => item.id === gameId);
+  const updated = await TenantSettings.findOne({ tenantId }).lean<TenantSettingsDocument>();
+  const scheduleGame = updated?.schedule?.games?.find((item) => item.id === gameId);
   if (!scheduleGame) {
     throw new Error("Schedule game not found");
   }
 
-  return scheduleGame;
+  return mapScheduleGame(scheduleGame);
 }
 
 export async function removeScheduleGame(tenantId: string, gameId: string) {
-  const data = await TeamData.findOneAndUpdate(
+  const data = await TenantSettings.findOneAndUpdate(
     { tenantId },
-    { $pull: { schedule: { id: gameId } } },
+    { $pull: { "schedule.games": { id: gameId } } },
     { new: true }
-  ).lean<TeamDataDocument>();
+  ).lean<TenantSettingsDocument>();
 
   if (!data) {
     throw new Error("Team data not found");
   }
 
-  return data.schedule;
+  return (data.schedule?.games ?? []).map(mapScheduleGame);
 }

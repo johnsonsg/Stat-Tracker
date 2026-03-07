@@ -15,7 +15,7 @@ export default function AppHeader() {
     >
       <Toolbar>
         <Typography variant="h6" sx={{ flexGrow: 1 }}>
-          Stat Tracker
+          4th &nd One Stat Tracker
         </Typography>
         <Box>
           <button

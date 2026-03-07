@@ -1,8 +1,9 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
   AppBar as MuiAppBar,
   Box,
   Chip,
+  CircularProgress,
   CssBaseline,
   Divider,
   Drawer as MuiDrawer,
@@ -16,7 +17,12 @@ import {
   Typography,
 } from "@mui/material";
 import { styled, useTheme, type Theme } from "@mui/material/styles";
-import { OrganizationSwitcher, useOrganizationList } from "@clerk/clerk-react";
+import {
+  OrganizationSwitcher,
+  useAuth,
+  useOrganization,
+  useOrganizationList
+} from "@clerk/clerk-react";
 import { Link, useLocation } from "react-router-dom";
 import {
   ChevronLeft,
@@ -24,6 +30,7 @@ import {
   Gamepad2,
   LayoutDashboard,
   Menu,
+  RefreshCw,
   Settings,
   User2,
   Users,
@@ -108,13 +115,31 @@ export default function MiniVariantDrawer({ children, team, teamName }: MiniVari
   const theme = useTheme();
   const location = useLocation();
   const [open, setOpen] = useState(true);
+  const { getToken } = useAuth();
+  const { organization } = useOrganization();
   const { userMemberships, isLoaded } = useOrganizationList();
-  const displaySchool = teamName?.trim() || team?.schoolName?.trim() || "Stat Tracker";
+  const fallbackOrgName =
+    organization?.name?.trim() ||
+    userMemberships?.data?.[0]?.organization?.name?.trim() ||
+    null;
+  const displaySchool =
+    teamName?.trim() ||
+    fallbackOrgName ||
+    team?.schoolName?.trim() ||
+    "4th and 1 Stat Tracker";
   const displayMascot = team?.mascotName?.trim() || "";
   const teamInitial = displaySchool.slice(0, 1).toUpperCase();
   const showOrgSwitcher = isLoaded && (userMemberships?.data?.length ?? 0) > 1;
   const appBarSubtitle = teamName?.trim() || null;
   const [isConnected, setIsConnected] = useState(socket.connected);
+  const [teamDebug, setTeamDebug] = useState<{
+    hasTenantSettings: boolean;
+    playersCount: number;
+    scheduleCount: number;
+    teamName: string | null;
+  } | null>(null);
+  const [teamDebugLoading, setTeamDebugLoading] = useState(false);
+  const [teamDebugCheckedAt, setTeamDebugCheckedAt] = useState<Date | null>(null);
   useEffect(() => {
     const handleConnect = () => setIsConnected(true);
     const handleDisconnect = () => setIsConnected(false);
@@ -127,6 +152,39 @@ export default function MiniVariantDrawer({ children, team, teamName }: MiniVari
       socket.off("disconnect", handleDisconnect);
     };
   }, []);
+
+  const loadTeamDebug = useCallback(async () => {
+    try {
+      setTeamDebugLoading(true);
+      const token = await getToken();
+      if (!token) {
+        return;
+      }
+      const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
+      const response = await fetch(`${apiBase}/api/team-data/debug`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!response.ok) {
+        return;
+      }
+      const data = (await response.json()) as {
+        hasTenantSettings: boolean;
+        playersCount: number;
+        scheduleCount: number;
+        teamName: string | null;
+      };
+      setTeamDebug(data);
+      setTeamDebugCheckedAt(new Date());
+    } catch {
+      setTeamDebug(null);
+    } finally {
+      setTeamDebugLoading(false);
+    }
+  }, [getToken]);
+
+  useEffect(() => {
+    void loadTeamDebug();
+  }, [loadTeamDebug]);
 
 
   const navItems = [
@@ -203,6 +261,39 @@ export default function MiniVariantDrawer({ children, team, teamName }: MiniVari
               variant={isConnected ? "filled" : "outlined"}
             />
           </Tooltip>
+          {teamDebug && (
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+              <Tooltip
+                title={
+                  teamDebug.hasTenantSettings
+                    ? `Team data loaded: ${teamDebug.playersCount} players, ${teamDebug.scheduleCount} games`
+                    : "No tenant-settings document found for this org"
+                }
+              >
+                <Chip
+                  size="small"
+                  label={
+                    teamDebug.hasTenantSettings
+                      ? `Team ${teamDebug.playersCount}P/${teamDebug.scheduleCount}G`
+                      : "Team Missing"
+                  }
+                  color={teamDebug.hasTenantSettings ? "success" : "warning"}
+                  variant="outlined"
+                />
+              </Tooltip>
+              <Tooltip
+                title={
+                  teamDebugCheckedAt
+                    ? `Last checked: ${teamDebugCheckedAt.toLocaleTimeString()}`
+                    : "Refresh team data status"
+                }
+              >
+                <IconButton size="small" onClick={loadTeamDebug} disabled={teamDebugLoading}>
+                  {teamDebugLoading ? <CircularProgress size={14} /> : <RefreshCw size={14} />}
+                </IconButton>
+              </Tooltip>
+            </Box>
+          )}
           <ThemeToggle />
         </Toolbar>
       </AppBar>

@@ -11,11 +11,25 @@ import {
   updateTeamData
 } from "./teamData.service";
 import { playerSchema, scheduleSchema, teamDataSchema } from "./teamData.types";
+import { TenantSettings, type TenantSettingsDocument } from "./tenantSettings.model";
 
 export async function getTeamDataHandler(req: Request, res: Response) {
   const tenantId = getTenantId(req);
   const data = await getTeamData(tenantId);
   return res.json(data);
+}
+
+export async function getTeamDataDebugHandler(req: Request, res: Response) {
+  const tenantId = getTenantId(req);
+  const data = await TenantSettings.findOne({ tenantId }).lean<TenantSettingsDocument>();
+
+  return res.json({
+    tenantId,
+    hasTenantSettings: Boolean(data),
+    teamName: data?.metadata?.teamName ?? null,
+    playersCount: Array.isArray(data?.players) ? data.players.length : 0,
+    scheduleCount: Array.isArray(data?.schedule?.games) ? data.schedule.games.length : 0
+  });
 }
 
 export async function updateTeamDataHandler(req: Request, res: Response) {
