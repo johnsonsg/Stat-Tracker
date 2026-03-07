@@ -88,3 +88,17 @@ export async function updatePlayEvent(
 
   return updated;
 }
+
+export async function deleteLatestPlayEvent(tenantId: string, gameId: string) {
+  const { season, gameId: objectId } = await getGameSeason(tenantId, gameId);
+  const latest = await PlayEvent.findOne({ tenantId, season, gameId: objectId })
+    .sort({ sequence: -1 })
+    .lean<PlayEventDocument>();
+
+  if (!latest) {
+    throw new Error("No plays found");
+  }
+
+  await PlayEvent.deleteOne({ _id: latest._id, tenantId, season, gameId: objectId });
+  return latest;
+}

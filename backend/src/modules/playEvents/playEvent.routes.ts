@@ -2,6 +2,7 @@ import { Router } from "express";
 import { asyncHandler } from "../../utils/asyncHandler";
 import {
 	createPlayEventHandler,
+	deleteLatestPlayEventHandler,
 	listPlayEventsHandler,
 	updatePlayEventHandler
 } from "./playEvent.controller";
@@ -133,6 +134,29 @@ router.put(
 	"/:playId",
 	requireOrgRole(["org:admin", "org:member"]),
 	asyncHandler(updatePlayEventHandler)
+);
+
+/**
+ * @openapi
+ * /api/games/{gameId}/plays/latest:
+ *   delete:
+ *     summary: Delete the most recent play event
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: gameId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Latest play event deleted
+ */
+router.delete(
+	"/latest",
+	requireOrgRole(["org:admin", "org:member"]),
+	asyncHandler(deleteLatestPlayEventHandler)
 );
 
 /**

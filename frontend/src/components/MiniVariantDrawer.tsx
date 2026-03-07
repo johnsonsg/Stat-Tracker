@@ -1,7 +1,8 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   AppBar as MuiAppBar,
   Box,
+  Chip,
   CssBaseline,
   Divider,
   Drawer as MuiDrawer,
@@ -11,6 +12,7 @@ import {
   ListItemIcon,
   ListItemText,
   Toolbar,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import { styled, useTheme, type Theme } from "@mui/material/styles";
@@ -28,6 +30,7 @@ import {
 } from "lucide-react";
 import ThemeToggle from "@/components/ThemeToggle";
 import type { TeamProfile } from "@/types/Team";
+import { socket } from "@/services/socket";
 
 const drawerWidth = 260;
 
@@ -111,10 +114,25 @@ export default function MiniVariantDrawer({ children, team, teamName }: MiniVari
   const teamInitial = displaySchool.slice(0, 1).toUpperCase();
   const showOrgSwitcher = isLoaded && (userMemberships?.data?.length ?? 0) > 1;
   const appBarSubtitle = teamName?.trim() || null;
+  const [isConnected, setIsConnected] = useState(socket.connected);
+  useEffect(() => {
+    const handleConnect = () => setIsConnected(true);
+    const handleDisconnect = () => setIsConnected(false);
+
+    socket.on("connect", handleConnect);
+    socket.on("disconnect", handleDisconnect);
+
+    return () => {
+      socket.off("connect", handleConnect);
+      socket.off("disconnect", handleDisconnect);
+    };
+  }, []);
+
 
   const navItems = [
     { label: "Dashboard", icon: <LayoutDashboard size={20} />, to: "/dashboard" },
     { label: "Game Tracker", icon: <Gamepad2 size={20} />, to: "/games" },
+    { label: "Team", icon: <Settings size={20} />, to: "/team" },
     { label: "Players", icon: <Users size={20} />, to: "/players" },
     { label: "Profile", icon: <User2 size={20} />, to: "/profile" }
   ];
@@ -125,6 +143,9 @@ export default function MiniVariantDrawer({ children, team, teamName }: MiniVari
     }
     if (pathname.startsWith("/players")) {
       return "Players";
+    }
+    if (pathname.startsWith("/team")) {
+      return "Team";
     }
     if (pathname.startsWith("/profile")) {
       return "Profile";
@@ -174,6 +195,14 @@ export default function MiniVariantDrawer({ children, team, teamName }: MiniVari
               }}
             />
           )}
+          <Tooltip title={isConnected ? "Realtime socket connected" : "Realtime socket disconnected"}>
+            <Chip
+              size="small"
+              label={isConnected ? "Connected" : "Offline"}
+              color={isConnected ? "success" : "default"}
+              variant={isConnected ? "filled" : "outlined"}
+            />
+          </Tooltip>
           <ThemeToggle />
         </Toolbar>
       </AppBar>

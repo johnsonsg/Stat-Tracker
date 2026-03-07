@@ -10,17 +10,21 @@ import {
   DialogTitle,
   FormControl,
   FormControlLabel,
+  IconButton,
   InputLabel,
   MenuItem,
   Paper,
+  Popover,
   Select,
   Snackbar,
   Stack,
   Switch,
   TextField,
+  Tooltip,
   Typography
 } from "@mui/material";
 import { useAuth } from "@clerk/clerk-react";
+import { Keyboard } from "lucide-react";
 import GameBar from "./components/GameBar";
 import PlayTypeSelector from "./components/PlayTypeSelector";
 import PlayerSelector from "./components/PlayerSelector";
@@ -29,6 +33,8 @@ import PlayTimeline from "./components/PlayTimeline";
 import QuickRoster from "./components/QuickRoster";
 import type { TeamPlayer } from "@/types/teamData";
 import PlayConfirmationBanner from "./components/PlayConfirmationBanner";
+import { socket } from "@/services/socket";
+import { useHotkeys } from "react-hotkeys-hook";
 
 type PlaySummary = {
   id: string;
@@ -92,6 +98,27 @@ type PendingPlay = {
   };
 };
 
+const PLAY_TYPE_HOTKEYS = {
+  pass: "p",
+  run: "r",
+  sack: "s",
+  turnover: "t",
+  fg: "g",
+  punt: "u",
+  penalty: "n"
+} as const;
+
+const RESULT_HOTKEYS = {
+  "+1": "1",
+  "+3": "3",
+  "+5": "5",
+  "+10": "0",
+  "+20": "2",
+  TD: "d",
+  INT: "i",
+  FUMBLE: "f"
+} as const;
+
 export default function StatEntryPage({ gameId, onSelectGame, roster }: StatEntryPageProps) {
   const { getToken } = useAuth();
   const [playType, setPlayType] = useState<string | undefined>();
@@ -134,6 +161,11 @@ export default function StatEntryPage({ gameId, onSelectGame, roster }: StatEntr
   });
   const [pendingPlay, setPendingPlay] = useState<PendingPlay | null>(null);
   const pendingTimerRef = useRef<number | null>(null);
+  const [shortcutAnchor, setShortcutAnchor] = useState<HTMLElement | null>(null);
+  const [activePlayerField, setActivePlayerField] = useState<"primary" | "secondary">("primary");
+  const statEntryRef = useRef<HTMLDivElement | null>(null);
+  const primarySelectorRef = useRef<HTMLDivElement | null>(null);
+  const secondarySelectorRef = useRef<HTMLDivElement | null>(null);
   const [gameState, setGameState] = useState({
     quarter: 1,
     clock: "12:00",
@@ -147,6 +179,31 @@ export default function StatEntryPage({ gameId, onSelectGame, roster }: StatEntr
   const rosterById = useMemo(() => new Map(roster.map((player) => [player.id, player])), [roster]);
   const playTypeOptions = ["pass", "run", "sack", "punt", "fg", "penalty", "turnover"];
   const activeGameId = gameId ?? (selectedGameId || null);
+  const isEditingDialogOpen = isEditOpen || isCreateOpen;
+  const isShortcutOpen = Boolean(shortcutAnchor);
+  const shortcutId = isShortcutOpen ? "stat-entry-shortcuts" : undefined;
+  const isPrimaryActive = activePlayerField === "primary";
+
+  const shouldIgnoreHotkey = (event?: KeyboardEvent) => {
+    const target = event?.target as HTMLElement | null;
+    if (!target) {
+      return true;
+    }
+    const tagName = target.tagName;
+    if (
+      target.isContentEditable ||
+      tagName === "INPUT" ||
+      tagName === "TEXTAREA" ||
+      tagName === "SELECT"
+    ) {
+      return true;
+    }
+    const activeElement = document.activeElement as HTMLElement | null;
+    if (!activeElement || !statEntryRef.current?.contains(activeElement)) {
+      return true;
+    }
+    return false;
+  };
 
   const buildPlayLabel = useCallback(
     (play: Pick<PlaySummary, "playType" | "players">) => {
@@ -389,6 +446,86 @@ export default function StatEntryPage({ gameId, onSelectGame, roster }: StatEntr
       isMounted = false;
     };
   }, [activeGameId, clearPendingTimer, getToken, mapPlayToSummary, showSnackbar]);
+
+
+  useEffect(() => {
+    if (!activeGameId) {
+      return;
+    }
+
+    socket.emit("joinGame", activeGameId);
+
+    const handleRecorded = (play: {
+      _id: string;
+      sequence: number;
+      playType: string;
+      yards?: number;
+      notes?: string;
+      players?: PlaySummary["players"];
+      touchdown?: boolean;
+      turnover?: boolean;
+    }) => {
+      const summary = mapPlayToSummary(play);
+      setPlays((prev) => {
+        if (prev.some((item) => item.id === summary.id)) {
+          return prev;
+        }
+        return [summary, ...prev];
+      });
+    };
+
+    const handleUpdated = (play: {
+      _id: string;
+      sequence: number;
+      playType: string;
+      yards?: number;
+      notes?: string;
+      players?: PlaySummary["players"];
+      touchdown?: boolean;
+      turnover?: boolean;
+    }) => {
+      const summary = mapPlayToSummary(play);
+      setPlays((prev) => prev.map((item) => (item.id === summary.id ? summary : item)));
+    };
+
+    const handleDeleted = (play: { _id: string }) => {
+      setPlays((prev) => prev.filter((item) => item.id !== play._id));
+      if (selectedPlay?.id === play._id) {
+        setSelectedPlay(null);
+      }
+    };
+
+    const handleGameStarted = () => {
+      showSnackbar("Game started.", "success");
+    };
+
+    const handleGameFinished = () => {
+      showSnackbar("Game finished.", "success");
+    };
+
+    const handleGameStatusChanged = (payload: { status?: string }) => {
+      if (payload?.status) {
+        showSnackbar(`Game status: ${payload.status}`, "success");
+      }
+    };
+
+    socket.on("playRecorded", handleRecorded);
+    socket.on("playUpdated", handleUpdated);
+    socket.on("playDeleted", handleDeleted);
+    socket.on("gameStarted", handleGameStarted);
+    socket.on("gameFinished", handleGameFinished);
+    socket.on("gameStatusChanged", handleGameStatusChanged);
+
+    return () => {
+      socket.off("playRecorded", handleRecorded);
+      socket.off("playUpdated", handleUpdated);
+      socket.off("playDeleted", handleDeleted);
+      socket.off("gameStarted", handleGameStarted);
+      socket.off("gameFinished", handleGameFinished);
+      socket.off("gameStatusChanged", handleGameStatusChanged);
+      socket.emit("leaveGame", activeGameId);
+    };
+  }, [activeGameId, mapPlayToSummary, selectedPlay, showSnackbar]);
 
   useEffect(() => {
     let isMounted = true;
@@ -723,8 +860,233 @@ export default function StatEntryPage({ gameId, onSelectGame, roster }: StatEntr
     setIsSaving(false);
   };
 
+  const selectPlayType = useCallback(
+    (nextType: string) => {
+      if (isEditingDialogOpen || pendingPlay) {
+        return;
+      }
+      setPlayType(nextType.toUpperCase());
+    },
+    [isEditingDialogOpen, pendingPlay]
+  );
+
+  const triggerResult = useCallback(
+    (result: string) => {
+      if (isEditingDialogOpen || pendingPlay) {
+        return;
+      }
+      if (!playType || !primaryPlayer) {
+        showSnackbar("Select play type and primary player first.", "error");
+        return;
+      }
+      void handleSave(result);
+    },
+    [handleSave, isEditingDialogOpen, pendingPlay, playType, primaryPlayer, showSnackbar]
+  );
+
+  const confirmPendingPlay = useCallback(() => {
+    if (!pendingPlay) {
+      return;
+    }
+    clearPendingTimer();
+    void finalizePendingPlay(pendingPlay);
+  }, [clearPendingTimer, finalizePendingPlay, pendingPlay]);
+
+  const undoLastSavedPlay = useCallback(async () => {
+    if (!activeGameId) {
+      showSnackbar("Select a game before undoing a play.", "error");
+      return;
+    }
+    if (plays.length === 0) {
+      showSnackbar("No saved plays to undo.", "error");
+      return;
+    }
+
+    try {
+      const token = await getToken();
+      if (!token) {
+        throw new Error("Missing session token");
+      }
+      const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
+      const response = await fetch(`${apiBase}/api/games/${activeGameId}/plays/latest`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || "Failed to undo play");
+      }
+
+      const removed = (await response.json()) as { _id: string };
+      setPlays((prev) => prev.filter((play) => play.id !== removed._id));
+      if (selectedPlay?.id === removed._id) {
+        setSelectedPlay(null);
+      }
+      showSnackbar("Last play removed.", "success");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to undo play";
+      setError(message);
+      showSnackbar(message, "error");
+    }
+  }, [activeGameId, getToken, plays.length, selectedPlay, showSnackbar]);
+
+  useHotkeys(PLAY_TYPE_HOTKEYS.pass, (event) => {
+    if (isEditingDialogOpen || shouldIgnoreHotkey(event)) {
+      return;
+    }
+    selectPlayType("pass");
+  });
+  useHotkeys(PLAY_TYPE_HOTKEYS.run, (event) => {
+    if (isEditingDialogOpen || shouldIgnoreHotkey(event)) {
+      return;
+    }
+    selectPlayType("run");
+  });
+  useHotkeys(PLAY_TYPE_HOTKEYS.sack, (event) => {
+    if (isEditingDialogOpen || shouldIgnoreHotkey(event)) {
+      return;
+    }
+    selectPlayType("sack");
+  });
+  useHotkeys(PLAY_TYPE_HOTKEYS.turnover, (event) => {
+    if (isEditingDialogOpen || shouldIgnoreHotkey(event)) {
+      return;
+    }
+    selectPlayType("turnover");
+  });
+  useHotkeys(PLAY_TYPE_HOTKEYS.fg, (event) => {
+    if (isEditingDialogOpen || shouldIgnoreHotkey(event)) {
+      return;
+    }
+    selectPlayType("fg");
+  });
+  useHotkeys(PLAY_TYPE_HOTKEYS.punt, (event) => {
+    if (isEditingDialogOpen || shouldIgnoreHotkey(event)) {
+      return;
+    }
+    selectPlayType("punt");
+  });
+  useHotkeys(PLAY_TYPE_HOTKEYS.penalty, (event) => {
+    if (isEditingDialogOpen || shouldIgnoreHotkey(event)) {
+      return;
+    }
+    selectPlayType("penalty");
+  });
+
+  useHotkeys(RESULT_HOTKEYS["+1"], (event) => {
+    if (isEditingDialogOpen || shouldIgnoreHotkey(event)) {
+      return;
+    }
+    triggerResult("+1");
+  });
+  useHotkeys(RESULT_HOTKEYS["+3"], (event) => {
+    if (isEditingDialogOpen || shouldIgnoreHotkey(event)) {
+      return;
+    }
+    triggerResult("+3");
+  });
+  useHotkeys(RESULT_HOTKEYS["+5"], (event) => {
+    if (isEditingDialogOpen || shouldIgnoreHotkey(event)) {
+      return;
+    }
+    triggerResult("+5");
+  });
+  useHotkeys(RESULT_HOTKEYS["+10"], (event) => {
+    if (isEditingDialogOpen || shouldIgnoreHotkey(event)) {
+      return;
+    }
+    triggerResult("+10");
+  });
+  useHotkeys(RESULT_HOTKEYS["+20"], (event) => {
+    if (isEditingDialogOpen || shouldIgnoreHotkey(event)) {
+      return;
+    }
+    triggerResult("+20");
+  });
+  useHotkeys(RESULT_HOTKEYS.TD, (event) => {
+    if (isEditingDialogOpen || shouldIgnoreHotkey(event)) {
+      return;
+    }
+    triggerResult("TD");
+  });
+  useHotkeys(RESULT_HOTKEYS.INT, (event) => {
+    if (isEditingDialogOpen || shouldIgnoreHotkey(event)) {
+      return;
+    }
+    triggerResult("INT");
+  });
+  useHotkeys(RESULT_HOTKEYS.FUMBLE, (event) => {
+    if (isEditingDialogOpen || shouldIgnoreHotkey(event)) {
+      return;
+    }
+    triggerResult("FUMBLE");
+  });
+
+  useHotkeys("space", (event) => {
+    if (isEditingDialogOpen || shouldIgnoreHotkey(event)) {
+      return;
+    }
+    event?.preventDefault();
+    confirmPendingPlay();
+  });
+
+  useHotkeys("tab", (event) => {
+    if (isEditingDialogOpen || shouldIgnoreHotkey(event)) {
+      return;
+    }
+    event?.preventDefault();
+    const nextField = activePlayerField === "primary" ? "secondary" : "primary";
+    setActivePlayerField(nextField);
+    const container =
+      nextField === "primary" ? primarySelectorRef.current : secondarySelectorRef.current;
+    const button = container?.querySelector("button");
+    button?.focus();
+  });
+
+  useHotkeys("e", (event) => {
+    if (isEditingDialogOpen || shouldIgnoreHotkey(event)) {
+      return;
+    }
+    if (pendingPlay) {
+      handleEditPending();
+    } else if (selectedPlay) {
+      handleSelectPlay(selectedPlay.id);
+    } else if (plays.length > 0) {
+      handleSelectPlay(plays[0].id);
+    }
+  });
+
+  useHotkeys("backspace", (event) => {
+    if (isEditingDialogOpen || shouldIgnoreHotkey(event)) {
+      return;
+    }
+    event?.preventDefault();
+    if (pendingPlay) {
+      handleUndoPending();
+      return;
+    }
+    void undoLastSavedPlay();
+  });
+
+  useHotkeys("esc", (event) => {
+    if (isEditingDialogOpen || shouldIgnoreHotkey(event)) {
+      return;
+    }
+    if (pendingPlay) {
+      handleUndoPending();
+    } else {
+      showSnackbar("No pending play to cancel.", "error");
+    }
+  });
+
   return (
-    <Box sx={{ display: "grid", gap: 3, gridTemplateColumns: { xs: "1fr", lg: "3fr 1fr" } }}>
+    <Box
+      ref={statEntryRef}
+      sx={{ display: "grid", gap: 3, gridTemplateColumns: { xs: "1fr", lg: "3fr 1fr" } }}
+    >
       <Stack spacing={3}>
         {error && <Alert severity="error">{error}</Alert>}
         <Paper elevation={1} sx={{ p: 2 }}>
@@ -779,10 +1141,158 @@ export default function StatEntryPage({ gameId, onSelectGame, roster }: StatEntr
           </Stack>
         </Paper>
         <GameBar {...gameState} />
+        <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
+          <Tooltip title="Keyboard shortcuts">
+            <IconButton
+              aria-describedby={shortcutId}
+              size="small"
+              onClick={(event) => setShortcutAnchor(event.currentTarget)}
+            >
+              <Keyboard size={18} />
+            </IconButton>
+          </Tooltip>
+          <Popover
+            id={shortcutId}
+            open={isShortcutOpen}
+            anchorEl={shortcutAnchor}
+            onClose={() => setShortcutAnchor(null)}
+            anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+            transformOrigin={{ vertical: "top", horizontal: "right" }}
+          >
+            <Box sx={{ p: 2, maxWidth: 320 }}>
+              <Stack spacing={2}>
+                <Box>
+                  <Typography variant="subtitle2">Play types</Typography>
+                  <Stack spacing={0.75} sx={{ mt: 1 }}>
+                    {[
+                      { label: "Pass", key: PLAY_TYPE_HOTKEYS.pass.toUpperCase() },
+                      { label: "Run", key: PLAY_TYPE_HOTKEYS.run.toUpperCase() },
+                      { label: "Sack", key: PLAY_TYPE_HOTKEYS.sack.toUpperCase() },
+                      { label: "Turnover", key: PLAY_TYPE_HOTKEYS.turnover.toUpperCase() },
+                      { label: "Field goal", key: PLAY_TYPE_HOTKEYS.fg.toUpperCase() },
+                      { label: "Punt", key: PLAY_TYPE_HOTKEYS.punt.toUpperCase() },
+                      { label: "Penalty", key: PLAY_TYPE_HOTKEYS.penalty.toUpperCase() }
+                    ].map((item) => (
+                      <Box
+                        key={item.label}
+                        sx={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 2
+                        }}
+                      >
+                        <Typography variant="body2">{item.label}</Typography>
+                        <Box
+                          sx={{
+                            border: 1,
+                            borderColor: "divider",
+                            borderRadius: 1,
+                            px: 1,
+                            py: 0.25,
+                            fontSize: "0.75rem",
+                            fontFamily: "monospace"
+                          }}
+                        >
+                          {item.key}
+                        </Box>
+                      </Box>
+                    ))}
+                  </Stack>
+                </Box>
+                <Box>
+                  <Typography variant="subtitle2">Results</Typography>
+                  <Stack spacing={0.75} sx={{ mt: 1 }}>
+                    {[
+                      { label: "+1", key: RESULT_HOTKEYS["+1"].toUpperCase() },
+                      { label: "+3", key: RESULT_HOTKEYS["+3"].toUpperCase() },
+                      { label: "+5", key: RESULT_HOTKEYS["+5"].toUpperCase() },
+                      { label: "+10", key: RESULT_HOTKEYS["+10"].toUpperCase() },
+                      { label: "+20", key: RESULT_HOTKEYS["+20"].toUpperCase() },
+                      { label: "TD", key: RESULT_HOTKEYS.TD.toUpperCase() },
+                      { label: "INT", key: RESULT_HOTKEYS.INT.toUpperCase() },
+                      { label: "Fumble", key: RESULT_HOTKEYS.FUMBLE.toUpperCase() }
+                    ].map((item) => (
+                      <Box
+                        key={item.label}
+                        sx={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 2
+                        }}
+                      >
+                        <Typography variant="body2">{item.label}</Typography>
+                        <Box
+                          sx={{
+                            border: 1,
+                            borderColor: "divider",
+                            borderRadius: 1,
+                            px: 1,
+                            py: 0.25,
+                            fontSize: "0.75rem",
+                            fontFamily: "monospace"
+                          }}
+                        >
+                          {item.key}
+                        </Box>
+                      </Box>
+                    ))}
+                  </Stack>
+                </Box>
+                <Box>
+                  <Typography variant="subtitle2">Actions</Typography>
+                  <Stack spacing={0.75} sx={{ mt: 1 }}>
+                    {[
+                      { label: "Confirm play", key: "Space" },
+                      { label: "Edit last play", key: "E" },
+                      { label: "Undo last play", key: "Backspace" },
+                      { label: "Cancel current entry", key: "Esc" },
+                      { label: "Switch player selector", key: "Tab" }
+                    ].map((item) => (
+                      <Box
+                        key={item.label}
+                        sx={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 2
+                        }}
+                      >
+                        <Typography variant="body2">{item.label}</Typography>
+                        <Box
+                          sx={{
+                            border: 1,
+                            borderColor: "divider",
+                            borderRadius: 1,
+                            px: 1,
+                            py: 0.25,
+                            fontSize: "0.75rem",
+                            fontFamily: "monospace"
+                          }}
+                        >
+                          {item.key}
+                        </Box>
+                      </Box>
+                    ))}
+                  </Stack>
+                </Box>
+              </Stack>
+            </Box>
+          </Popover>
+        </Box>
 
         <PlayTypeSelector selected={playType} onSelect={setPlayType} />
 
-        <Paper elevation={1} sx={{ p: 2 }}>
+        <Paper
+          elevation={1}
+          ref={primarySelectorRef}
+          sx={{
+            p: 2,
+            border: "1px solid",
+            borderColor: isPrimaryActive ? "primary.main" : "divider"
+          }}
+        >
           <Stack spacing={2}>
             <Typography variant="subtitle2" color="text.secondary">
               Primary player
@@ -790,18 +1300,32 @@ export default function StatEntryPage({ gameId, onSelectGame, roster }: StatEntr
             <QuickRoster
               title="Recent"
               players={quickPrimary}
-              onSelect={(player) => setPrimaryPlayer(player)}
+              onSelect={(player) => {
+                setActivePlayerField("primary");
+                setPrimaryPlayer(player);
+              }}
             />
             <PlayerSelector
               title="Roster"
               players={roster}
               selected={primaryPlayer}
-              onSelect={setPrimaryPlayer}
+              onSelect={(player) => {
+                setActivePlayerField("primary");
+                setPrimaryPlayer(player);
+              }}
             />
           </Stack>
         </Paper>
 
-        <Paper elevation={1} sx={{ p: 2 }}>
+        <Paper
+          elevation={1}
+          ref={secondarySelectorRef}
+          sx={{
+            p: 2,
+            border: "1px solid",
+            borderColor: isPrimaryActive ? "divider" : "primary.main"
+          }}
+        >
           <Stack spacing={2}>
             <Typography variant="subtitle2" color="text.secondary">
               Secondary player
@@ -809,13 +1333,19 @@ export default function StatEntryPage({ gameId, onSelectGame, roster }: StatEntr
             <QuickRoster
               title="Recent"
               players={quickSecondary}
-              onSelect={(player) => setSecondaryPlayer(player)}
+              onSelect={(player) => {
+                setActivePlayerField("secondary");
+                setSecondaryPlayer(player);
+              }}
             />
             <PlayerSelector
               title="Roster"
               players={roster}
               selected={secondaryPlayer}
-              onSelect={setSecondaryPlayer}
+              onSelect={(player) => {
+                setActivePlayerField("secondary");
+                setSecondaryPlayer(player);
+              }}
             />
           </Stack>
         </Paper>
@@ -884,18 +1414,23 @@ export default function StatEntryPage({ gameId, onSelectGame, roster }: StatEntr
                 setCreateForm((prev) => ({ ...prev, gameDate: event.target.value }));
                 setCreateErrors((prev) => ({ ...prev, gameDate: undefined }));
               }}
-              InputLabelProps={{ shrink: true }}
               error={Boolean(createErrors.gameDate)}
               helperText={createErrors.gameDate}
+              InputLabelProps={{ shrink: true }}
             />
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setIsCreateOpen(false)} disabled={isCreating}>
+          <Button
+            onClick={() => {
+              setIsCreateOpen(false);
+              setCreateErrors({});
+            }}
+          >
             Cancel
           </Button>
           <Button variant="contained" onClick={handleCreateGame} disabled={isCreating}>
-            {isCreating ? "Creating..." : "Create"}
+            {isCreating ? "Saving..." : "Create game"}
           </Button>
         </DialogActions>
       </Dialog>
