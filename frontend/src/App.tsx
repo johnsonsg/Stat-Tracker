@@ -39,7 +39,7 @@ function TeamDrawer({ children }: TeamDrawerProps) {
 function AppShell({ title, description, children }: AppShellProps) {
   return (
     <TeamDrawer>
-      <Box sx={{ maxWidth: 1080 }}>
+      <Box sx={{ width: "100%", maxWidth: "100%" }}>
         <Typography variant="h4" gutterBottom>
           {title}
         </Typography>

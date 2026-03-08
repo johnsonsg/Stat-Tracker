@@ -6,16 +6,16 @@ import {
   Divider,
   Paper,
   Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
-  Typography
+  Typography,
+  useMediaQuery,
+  useTheme
 } from "@mui/material";
 import { useTeamData } from "@/state/useTeamData";
+import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 
 export default function RosterSchedule() {
+  const theme = useTheme();
+  const isSmall = useMediaQuery(theme.breakpoints.down("sm"));
   const { teamData, loading, error } = useTeamData();
 
   if (loading || !teamData) {
@@ -30,6 +30,18 @@ export default function RosterSchedule() {
   const players = teamData.players;
   const schedule = teamData.schedule;
 
+  const rosterColumns: GridColDef[] = [
+    { field: "number", headerName: "#", width: 90, minWidth: 90 },
+    { field: "name", headerName: "Name", width: 240, minWidth: 240 },
+    { field: "position", headerName: "Position", width: 140, minWidth: 140 }
+  ];
+
+  const scheduleColumns: GridColDef[] = [
+    { field: "opponent", headerName: "Opponent", width: 220, minWidth: 220 },
+    { field: "dateTime", headerName: "Date", width: 220, minWidth: 220 },
+    { field: "location", headerName: "Location", width: 160, minWidth: 160 }
+  ];
+
   return (
     <Stack spacing={2}>
       {error && <Alert severity="error">{error}</Alert>}
@@ -43,24 +55,21 @@ export default function RosterSchedule() {
             No players yet.
           </Typography>
         ) : (
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>#</TableCell>
-                <TableCell>Name</TableCell>
-                <TableCell>Position</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {players.map((player) => (
-                <TableRow key={player.id}>
-                  <TableCell>{player.number}</TableCell>
-                  <TableCell>{player.name}</TableCell>
-                  <TableCell>{player.position}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <Box sx={{ width: "100%", overflowX: "auto", height: 320 }}>
+            <DataGrid
+              rows={players.map((player) => ({
+                id: player.id,
+                number: player.number,
+                name: player.name,
+                position: player.position
+              }))}
+              columns={rosterColumns}
+              hideFooter
+              disableRowSelectionOnClick
+              density={isSmall ? "compact" : "standard"}
+              sx={{ border: 0, width: "100%", minWidth: 470 }}
+            />
+          </Box>
         )}
       </Paper>
 
@@ -77,24 +86,21 @@ export default function RosterSchedule() {
             No games on the schedule yet.
           </Typography>
         ) : (
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>Opponent</TableCell>
-                <TableCell>Date</TableCell>
-                <TableCell>Location</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {schedule.map((game) => (
-                <TableRow key={game.id}>
-                  <TableCell>{game.opponent}</TableCell>
-                  <TableCell>{new Date(game.dateTime).toLocaleString()}</TableCell>
-                  <TableCell>{game.location}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <Box sx={{ width: "100%", overflowX: "auto", height: 360 }}>
+            <DataGrid
+              rows={schedule.map((game) => ({
+                id: game.id,
+                opponent: game.opponent,
+                dateTime: new Date(game.dateTime).toLocaleString(),
+                location: game.location
+              }))}
+              columns={scheduleColumns}
+              hideFooter
+              disableRowSelectionOnClick
+              density={isSmall ? "compact" : "standard"}
+              sx={{ border: 0, width: "100%", minWidth: 600 }}
+            />
+          </Box>
         )}
       </Paper>
     </Stack>

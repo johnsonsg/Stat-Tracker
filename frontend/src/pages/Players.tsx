@@ -8,14 +8,13 @@ import {
   Paper,
   Select,
   Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
-  Typography
+  Typography,
+  useMediaQuery,
+  useTheme
 } from "@mui/material";
+import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { useAuth } from "@clerk/clerk-react";
+import { useTeamData } from "@/state/useTeamData";
 
 type GameSummary = {
   _id: string;
@@ -38,12 +37,26 @@ type PlayerGameStat = {
 };
 
 export default function Players() {
+  const theme = useTheme();
+  const isSmall = useMediaQuery(theme.breakpoints.down("sm"));
   const { getToken } = useAuth();
+  const { teamData } = useTeamData();
   const [games, setGames] = useState<GameSummary[]>([]);
   const [selectedGameId, setSelectedGameId] = useState<string>("");
   const [stats, setStats] = useState<PlayerGameStat[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const columns: GridColDef[] = [
+    { field: "playerName", headerName: "Player", width: 220, minWidth: 220 },
+    { field: "passing", headerName: "Pass", type: "number", width: 75, minWidth: 75, maxWidth: 75 },
+    { field: "rushing", headerName: "Rush", type: "number", width: 75, minWidth: 75, maxWidth: 75 },
+    { field: "receiving", headerName: "Recv", type: "number", width: 75, minWidth: 75, maxWidth: 75 },
+    { field: "tackles", headerName: "Tackles", type: "number", width: 75, minWidth: 75, maxWidth: 75 },
+    { field: "sacks", headerName: "Sacks", type: "number", width: 75, minWidth: 75, maxWidth: 75 },
+    { field: "interceptions", headerName: "INT", type: "number", width: 75, minWidth: 75, maxWidth: 75 },
+    { field: "tds", headerName: "TD", type: "number", width: 75, minWidth: 75, maxWidth: 75 }
+  ];
 
   useEffect(() => {
     let isMounted = true;
@@ -161,46 +174,36 @@ export default function Players() {
         <Typography variant="subtitle2" color="text.secondary" gutterBottom>
           Player totals
         </Typography>
-        {loading && (
-          <Typography variant="body2" color="text.secondary">
-            Loading stats...
-          </Typography>
-        )}
-        {!loading && stats.length === 0 && (
-          <Typography variant="body2" color="text.secondary">
-            No stats yet for this game.
-          </Typography>
-        )}
-        {!loading && stats.length > 0 && (
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>Player ID</TableCell>
-                <TableCell align="right">Pass</TableCell>
-                <TableCell align="right">Rush</TableCell>
-                <TableCell align="right">Recv</TableCell>
-                <TableCell align="right">Tackles</TableCell>
-                <TableCell align="right">Sacks</TableCell>
-                <TableCell align="right">INT</TableCell>
-                <TableCell align="right">TD</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {stats.map((row) => (
-                <TableRow key={row._id}>
-                  <TableCell>{row.playerId}</TableCell>
-                  <TableCell align="right">{row.passing ?? 0}</TableCell>
-                  <TableCell align="right">{row.rushing ?? 0}</TableCell>
-                  <TableCell align="right">{row.receiving ?? 0}</TableCell>
-                  <TableCell align="right">{row.tackles ?? 0}</TableCell>
-                  <TableCell align="right">{row.sacks ?? 0}</TableCell>
-                  <TableCell align="right">{row.interceptions ?? 0}</TableCell>
-                  <TableCell align="right">{row.tds ?? 0}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
+        <Box sx={{ width: "100%", overflowX: "auto", height: 420 }}>
+          <DataGrid
+            rows={stats.map((row) => ({
+              id: row._id,
+              playerName:
+                teamData?.players.find((player) => player.id === row.playerId)?.name ??
+                row.playerId,
+              passing: row.passing ?? 0,
+              rushing: row.rushing ?? 0,
+              receiving: row.receiving ?? 0,
+              tackles: row.tackles ?? 0,
+              sacks: row.sacks ?? 0,
+              interceptions: row.interceptions ?? 0,
+              tds: row.tds ?? 0
+            }))}
+            columns={columns}
+            loading={loading}
+            hideFooter
+            disableRowSelectionOnClick
+            density={isSmall ? "compact" : "standard"}
+            slots={{
+              noRowsOverlay: () => (
+                <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
+                  No stats yet for this game.
+                </Typography>
+              )
+            }}
+            sx={{ border: 0, width: "100%", minWidth: 725 }}
+          />
+        </Box>
       </Paper>
     </Stack>
   );
