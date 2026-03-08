@@ -392,7 +392,7 @@ export default function Players() {
           })
       }
     }),
-    [avgCol, baseColumns, getFirstNumber, percentCol, playersById, qbRating, safeDiv, statCol, stats]
+    [avgCol, baseColumns, getFirstNumber, percentCol, playersById, qbRating, round1, safeDiv, statCol, stats]
   );
 
   const activeCategory = categories[activeTab];

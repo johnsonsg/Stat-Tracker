@@ -35,7 +35,6 @@ import PlayTypeSelector from "./components/PlayTypeSelector";
 import PlayerSelector from "./components/PlayerSelector";
 import ResultSelector from "./components/ResultSelector";
 import PlayTimeline from "./components/PlayTimeline";
-import QuickRoster from "./components/QuickRoster";
 import type { TeamPlayer, TeamScheduleGame } from "@/types/teamData";
 import PlayConfirmationBanner from "./components/PlayConfirmationBanner";
 import Scoreboard from "@/components/Scoreboard";
@@ -149,8 +148,6 @@ export default function StatEntryPage({
   const [primaryPlayer, setPrimaryPlayer] = useState<TeamPlayer | null>(null);
   const [secondaryPlayer, setSecondaryPlayer] = useState<TeamPlayer | null>(null);
   const [plays, setPlays] = useState<PlaySummary[]>([]);
-  const [lastPrimary, setLastPrimary] = useState<TeamPlayer | null>(null);
-  const [lastSecondary, setLastSecondary] = useState<TeamPlayer | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [snackbar, setSnackbar] = useState<SnackbarState>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -203,7 +200,6 @@ export default function StatEntryPage({
   });
   const [score, setScore] = useState({ home: 0, away: 0 });
   const [isScoreUpdating, setIsScoreUpdating] = useState(false);
-  const [showAllPlayers, setShowAllPlayers] = useState(false);
   const [positionGroupTab, setPositionGroupTab] = useState(() => {
     const stored = accordionStorage.getItem(positionGroupStorageKey);
     if (stored === "offense" || stored === "defense" || stored === "special" || stored === "all") {
@@ -212,7 +208,13 @@ export default function StatEntryPage({
     return "all";
   });
   const [accordionState, setAccordionState] = useState(() => {
-    const fallback = { scoreboard: true, primary: true, secondary: true, starters: true };
+    const fallback = {
+      scoreboard: true,
+      primary: true,
+      secondary: true,
+      starters: true,
+      unflagged: true
+    };
     const raw = accordionStorage.getItem(accordionStorageKey);
     if (!raw) {
       return fallback;
@@ -223,7 +225,8 @@ export default function StatEntryPage({
         scoreboard: parsed.scoreboard ?? fallback.scoreboard,
         primary: parsed.primary ?? fallback.primary,
         secondary: parsed.secondary ?? fallback.secondary,
-        starters: parsed.starters ?? fallback.starters
+        starters: parsed.starters ?? fallback.starters,
+        unflagged: parsed.unflagged ?? fallback.unflagged
       };
     } catch {
       return fallback;
@@ -231,8 +234,6 @@ export default function StatEntryPage({
   });
   const { primaryIds, secondaryIds, starterIds } = usePlayerFlags();
 
-  const quickPrimary = useMemo(() => (lastPrimary ? [lastPrimary] : []), [lastPrimary]);
-  const quickSecondary = useMemo(() => (lastSecondary ? [lastSecondary] : []), [lastSecondary]);
   const rosterById = useMemo(() => new Map(roster.map((player) => [player.id, player])), [roster]);
   const primaryFlagged = useMemo(
     () => roster.filter((player) => primaryIds.includes(player.id)),
@@ -245,6 +246,24 @@ export default function StatEntryPage({
   const starterFlagged = useMemo(
     () => roster.filter((player) => starterIds.includes(player.id)),
     [starterIds, roster]
+  );
+  const primaryIdSet = useMemo(() => new Set(primaryIds), [primaryIds]);
+  const starterIdSet = useMemo(() => new Set(starterIds), [starterIds]);
+
+  const secondaryOnly = useMemo(
+    () => secondaryFlagged.filter((player) => !primaryIdSet.has(player.id) && !starterIdSet.has(player.id)),
+    [primaryIdSet, secondaryFlagged, starterIdSet]
+  );
+
+  const unflaggedRoster = useMemo(
+    () =>
+      roster.filter(
+        (player) =>
+          !primaryIdSet.has(player.id) &&
+          !starterIdSet.has(player.id) &&
+          !secondaryIds.includes(player.id)
+      ),
+    [primaryIdSet, roster, secondaryIds, starterIdSet]
   );
 
   const normalizeGroup = useCallback((value: string) => value.trim().toLowerCase(), []);
@@ -280,26 +299,11 @@ export default function StatEntryPage({
     [matchesPositionGroup]
   );
 
-  const filteredQuickPrimary = useMemo(
-    () => filterByGroup(quickPrimary),
-    [filterByGroup, quickPrimary]
-  );
-  const filteredQuickSecondary = useMemo(
-    () => filterByGroup(quickSecondary),
-    [filterByGroup, quickSecondary]
-  );
-  const filteredPrimaryFlagged = useMemo(
-    () => filterByGroup(primaryFlagged),
-    [filterByGroup, primaryFlagged]
-  );
-  const filteredSecondaryFlagged = useMemo(
-    () => filterByGroup(secondaryFlagged),
-    [filterByGroup, secondaryFlagged]
-  );
   const filteredStarterFlagged = useMemo(
     () => filterByGroup(starterFlagged),
     [filterByGroup, starterFlagged]
   );
+
 
   const groupCounts = useMemo(() => {
     return {
@@ -310,15 +314,15 @@ export default function StatEntryPage({
     };
   }, [matchesGroup, roster]);
 
-  const primaryRoster = useMemo(() => {
-    const base = showAllPlayers || primaryFlagged.length === 0 ? roster : primaryFlagged;
-    return filterByGroup(base);
-  }, [filterByGroup, primaryFlagged, roster, showAllPlayers]);
+  const primaryRoster = useMemo(
+    () => filterByGroup(primaryFlagged),
+    [filterByGroup, primaryFlagged]
+  );
 
-  const secondaryRoster = useMemo(() => {
-    const base = showAllPlayers || secondaryFlagged.length === 0 ? roster : secondaryFlagged;
-    return filterByGroup(base);
-  }, [filterByGroup, secondaryFlagged, roster, showAllPlayers]);
+  const secondaryRoster = useMemo(
+    () => filterByGroup(secondaryOnly),
+    [filterByGroup, secondaryOnly]
+  );
 
   const renderTabLabel = (label: string, count: number) => (
     <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
@@ -339,7 +343,7 @@ export default function StatEntryPage({
   );
 
   const handleAccordionChange = useCallback(
-    (key: "scoreboard" | "primary" | "secondary" | "starters") =>
+    (key: "scoreboard" | "primary" | "secondary" | "starters" | "unflagged") =>
       (_event: SyntheticEvent, expanded: boolean) => {
         setAccordionState((prev) => ({ ...prev, [key]: expanded }));
       },
@@ -682,8 +686,6 @@ export default function StatEntryPage({
           const teamSide = resolveTeamSide(selectedGame);
           await handleAdjustScore(teamSide, 6);
         }
-        setLastPrimary(primaryPlayer);
-        setLastSecondary(secondaryPlayer);
         setGameState((prev) => {
           const nextDown = prev.down >= 4 || Boolean(play.touchdown) ? 1 : prev.down + 1;
           const nextDistance = nextDown === 1 ? 10 : prev.distance;
@@ -937,7 +939,7 @@ export default function StatEntryPage({
     };
   }, [getToken]);
 
-  const refreshGames = async () => {
+  const refreshGames = useCallback(async () => {
     setGamesLoading(true);
     try {
       const token = await getToken();
@@ -960,10 +962,10 @@ export default function StatEntryPage({
     } finally {
       setGamesLoading(false);
     }
-  };
+  }, [getToken]);
 
 
-  const createGameFromSchedule = async (item: TeamScheduleGame) => {
+  const createGameFromSchedule = useCallback(async (item: TeamScheduleGame) => {
     if (!normalizedTeamName) {
       showSnackbar("Set your team name before creating a game.", "error");
       return;
@@ -1035,7 +1037,7 @@ export default function StatEntryPage({
     } finally {
       setIsScheduleCreating(false);
     }
-  };
+  }, [games, getToken, inferMatchup, normalizeText, normalizedTeamName, onSelectGame, refreshGames, showSnackbar]);
 
   useEffect(() => {
     if (autoCreateRef.current) {
@@ -1677,22 +1679,6 @@ export default function StatEntryPage({
           </AccordionDetails>
         </Accordion>
         <Paper elevation={1} sx={{ p: 2 }}>
-          <Stack spacing={1} direction={{ xs: "column", sm: "row" }} alignItems={{ sm: "center" }}>
-            <Typography variant="subtitle2" color="text.secondary">
-              Roster filter
-            </Typography>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={showAllPlayers}
-                  onChange={(event) => setShowAllPlayers(event.target.checked)}
-                />
-              }
-              label={showAllPlayers ? "Showing all players" : "Showing flagged players"}
-            />
-          </Stack>
-        </Paper>
-        <Paper elevation={1} sx={{ p: 2 }}>
           <Stack spacing={2}>
             <Typography variant="subtitle2" color="text.secondary">
               Active game
@@ -1976,27 +1962,9 @@ export default function StatEntryPage({
           </AccordionSummary>
           <AccordionDetails ref={primarySelectorRef}>
             <Stack spacing={2}>
-              <QuickRoster
-                title="Recent"
-                players={filteredQuickPrimary}
-                onSelect={(player) => {
-                  setActivePlayerField("primary");
-                  setPrimaryPlayer(player);
-                }}
-              />
-              {filteredPrimaryFlagged.length > 0 && (
-                <QuickRoster
-                  title="Primary picks"
-                  players={filteredPrimaryFlagged}
-                  onSelect={(player) => {
-                    setActivePlayerField("primary");
-                    setPrimaryPlayer(player);
-                  }}
-                />
-              )}
               {primaryRoster.length > 0 ? (
                 <PlayerSelector
-                  title="Roster"
+                  title=""
                   players={primaryRoster}
                   selected={primaryPlayer}
                   onSelect={(player) => {
@@ -2028,27 +1996,9 @@ export default function StatEntryPage({
           </AccordionSummary>
           <AccordionDetails ref={secondarySelectorRef}>
             <Stack spacing={2}>
-              <QuickRoster
-                title="Recent"
-                players={filteredQuickSecondary}
-                onSelect={(player) => {
-                  setActivePlayerField("secondary");
-                  setSecondaryPlayer(player);
-                }}
-              />
-              {filteredSecondaryFlagged.length > 0 && (
-                <QuickRoster
-                  title="Secondary picks"
-                  players={filteredSecondaryFlagged}
-                  onSelect={(player) => {
-                    setActivePlayerField("secondary");
-                    setSecondaryPlayer(player);
-                  }}
-                />
-              )}
               {secondaryRoster.length > 0 ? (
                 <PlayerSelector
-                  title="Roster"
+                  title=""
                   players={secondaryRoster}
                   selected={secondaryPlayer}
                   onSelect={(player) => {
@@ -2065,38 +2015,67 @@ export default function StatEntryPage({
           </AccordionDetails>
         </Accordion>
 
-        {starterFlagged.length > 0 && (
-          <Accordion
-            expanded={accordionState.starters}
-            onChange={handleAccordionChange("starters")}
-            sx={{ border: "1px solid", borderColor: "divider" }}
-          >
-            <AccordionSummary expandIcon={<ChevronDown size={18} />}>
-              <Typography variant="subtitle2" color="text.secondary">
-                Starters (click to set {isPrimaryActive ? "Primary" : "Secondary"})
+        <Accordion
+          expanded={accordionState.starters}
+          onChange={handleAccordionChange("starters")}
+          sx={{ border: "1px solid", borderColor: "divider" }}
+        >
+          <AccordionSummary expandIcon={<ChevronDown size={18} />}>
+            <Typography variant="subtitle2" color="text.secondary">
+              Starters
+            </Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            {filteredStarterFlagged.length > 0 ? (
+              <PlayerSelector
+                title=""
+                players={filteredStarterFlagged}
+                onSelect={(player) => {
+                  if (isPrimaryActive) {
+                    setPrimaryPlayer(player);
+                  } else {
+                    setSecondaryPlayer(player);
+                  }
+                }}
+              />
+            ) : (
+              <Typography variant="body2" color="text.secondary">
+                No starters in this group.
               </Typography>
-            </AccordionSummary>
-            <AccordionDetails>
-              {filteredStarterFlagged.length > 0 ? (
-                <QuickRoster
-                  title="Starters"
-                  players={filteredStarterFlagged}
-                  onSelect={(player) => {
-                    if (isPrimaryActive) {
-                      setPrimaryPlayer(player);
-                    } else {
-                      setSecondaryPlayer(player);
-                    }
-                  }}
-                />
-              ) : (
-                <Typography variant="body2" color="text.secondary">
-                  No starters in this group.
-                </Typography>
-              )}
-            </AccordionDetails>
-          </Accordion>
-        )}
+            )}
+          </AccordionDetails>
+        </Accordion>
+
+        <Accordion
+          expanded={accordionState.unflagged}
+          onChange={handleAccordionChange("unflagged")}
+          sx={{ border: "1px solid", borderColor: "divider" }}
+        >
+          <AccordionSummary expandIcon={<ChevronDown size={18} />}>
+            <Typography variant="subtitle2" color="text.secondary">
+              Roster (unflagged)
+            </Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            {unflaggedRoster.length > 0 ? (
+              <PlayerSelector
+                title="Roster"
+                players={unflaggedRoster}
+                onSelect={(player) => {
+                  if (isPrimaryActive) {
+                    setPrimaryPlayer(player);
+                  } else {
+                    setSecondaryPlayer(player);
+                  }
+                }}
+              />
+            ) : (
+              <Typography variant="body2" color="text.secondary">
+                No unflagged players.
+              </Typography>
+            )}
+          </AccordionDetails>
+        </Accordion>
 
         <Box
           sx={{

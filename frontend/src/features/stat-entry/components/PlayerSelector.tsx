@@ -17,9 +17,11 @@ type PlayerSelectorProps = {
 export default function PlayerSelector({ title, players, selected, onSelect }: PlayerSelectorProps) {
   return (
     <Stack spacing={1.5}>
-      <Typography variant="subtitle2" color="text.secondary">
-        {title}
-      </Typography>
+      {title ? (
+        <Typography variant="subtitle2" color="text.secondary">
+          {title}
+        </Typography>
+      ) : null}
       <Box
         sx={{
           display: "grid",

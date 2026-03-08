@@ -35,8 +35,8 @@ export default function RosterSchedule() {
     return "all";
   });
 
-  const players = teamData?.players ?? [];
-  const schedule = teamData?.schedule ?? [];
+  const players = useMemo(() => teamData?.players ?? [], [teamData]);
+  const schedule = useMemo(() => teamData?.schedule ?? [], [teamData]);
 
   const normalizeGroup = useCallback((value: string) => value.trim().toLowerCase(), []);
 
