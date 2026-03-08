@@ -5,6 +5,8 @@ import { TeamGameStats } from "./teamGameStats.model";
 
 type PlayerStatTotals = {
   passing: number;
+  passingAttempts: number;
+  passingCompletions: number;
   rushing: number;
   receiving: number;
   tackles: number;
@@ -15,6 +17,8 @@ type PlayerStatTotals = {
 
 const emptyPlayerTotals = (): PlayerStatTotals => ({
   passing: 0,
+  passingAttempts: 0,
+  passingCompletions: 0,
   rushing: 0,
   receiving: 0,
   tackles: 0,
@@ -85,23 +89,32 @@ export function computeStatsFromPlays(plays: PlayEventLike[]) {
     const rusher = getPlayerTotals(play.players?.rusherId);
     const tackler = getPlayerTotals(play.players?.tacklerId);
 
-    if (playType === "pass") {
+    if (playType === "pass" || playType === "incomplete") {
       if (passer) {
-        passer.passing += yards;
+        passer.passingAttempts += 1;
       }
-      if (receiver) {
-        receiver.receiving += yards;
+      const isCompletion = playType === "pass" && Boolean(receiver) && !turnover;
+      if (isCompletion && passer) {
+        passer.passingCompletions += 1;
       }
-      if (touchdown) {
+      if (playType === "pass") {
         if (passer) {
-          passer.tds += 1;
+          passer.passing += yards;
         }
         if (receiver) {
-          receiver.tds += 1;
+          receiver.receiving += yards;
         }
-      }
-      if (turnover && tackler) {
-        tackler.interceptions += 1;
+        if (touchdown) {
+          if (passer) {
+            passer.tds += 1;
+          }
+          if (receiver) {
+            receiver.tds += 1;
+          }
+        }
+        if (turnover && tackler) {
+          tackler.interceptions += 1;
+        }
       }
     } else if (playType === "run") {
       if (rusher) {

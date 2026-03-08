@@ -19,9 +19,30 @@ test("computeStatsFromPlays credits QB + receiver on pass TD", () => {
   assert.equal(teamTotals.pointsFor, 6);
   assert.equal(teamTotals.totalYards, 24);
   assert.equal(playerTotals.get("qb-1")?.passing, 24);
+  assert.equal(playerTotals.get("qb-1")?.passingAttempts, 1);
+  assert.equal(playerTotals.get("qb-1")?.passingCompletions, 1);
   assert.equal(playerTotals.get("qb-1")?.tds, 1);
   assert.equal(playerTotals.get("wr-1")?.receiving, 24);
   assert.equal(playerTotals.get("wr-1")?.tds, 1);
+});
+
+test("computeStatsFromPlays counts incompletions as attempts only", () => {
+  const plays = [
+    {
+      playType: "incomplete",
+      yards: 0,
+      players: {
+        passerId: "qb-3",
+        receiverId: "wr-3"
+      }
+    }
+  ];
+
+  const { playerTotals } = computeStatsFromPlays(plays);
+  assert.equal(playerTotals.get("qb-3")?.passingAttempts, 1);
+  assert.equal(playerTotals.get("qb-3")?.passingCompletions, 0);
+  assert.equal(playerTotals.get("qb-3")?.passing, 0);
+  assert.equal(playerTotals.get("wr-3")?.receiving, 0);
 });
 
 test("computeStatsFromPlays tracks interceptions on turnovers", () => {

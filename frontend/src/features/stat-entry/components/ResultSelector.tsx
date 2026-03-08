@@ -4,7 +4,7 @@ type ResultSelectorProps = {
   onSelect: (result: string) => void;
 };
 
-const results = ["+1", "+3", "+5", "+10", "+20", "TD", "INT", "FUMBLE"];
+const results = ["+1", "+3", "+5", "+10", "+20", "TD", "INC", "INT", "FUMBLE"];
 
 export default function ResultSelector({ onSelect }: ResultSelectorProps) {
   return (

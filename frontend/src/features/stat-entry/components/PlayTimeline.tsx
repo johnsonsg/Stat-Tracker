@@ -1,4 +1,4 @@
-import { Box, ButtonBase, Paper, Stack, Typography } from "@mui/material";
+import { Box, ButtonBase, Chip, Paper, Stack, Typography } from "@mui/material";
 
 type PlaySummary = {
   id: string;
@@ -16,11 +16,11 @@ type PlayTimelineProps = {
 
 export default function PlayTimeline({ plays, selectedId, onSelect }: PlayTimelineProps) {
   return (
-    <Paper elevation={1} sx={{ p: 2, height: "100%" }}>
+    <Paper elevation={1} sx={{ p: 2, height: "100%", display: "flex", flexDirection: "column" }}>
       <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
         Play Timeline
       </Typography>
-      <Stack spacing={1} sx={{ maxHeight: 520, overflowY: "auto" }}>
+      <Stack spacing={1} sx={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
         {plays.length === 0 && (
           <Typography variant="body2" color="text.secondary">
             No plays yet.
@@ -28,6 +28,11 @@ export default function PlayTimeline({ plays, selectedId, onSelect }: PlayTimeli
         )}
         {plays.map((play) => {
           const isSelected = selectedId === play.id;
+          const note = play.note?.toLowerCase() ?? "";
+          const isIncomplete = note === "incomplete";
+          const isTouchdown = note === "touchdown";
+          const isInterception = note === "int";
+          const isFumble = note === "fumble";
           return (
             <Box
               key={play.id}
@@ -54,9 +59,15 @@ export default function PlayTimeline({ plays, selectedId, onSelect }: PlayTimeli
                 <Typography variant="caption" color="text.secondary">
                   {play.sequence}
                 </Typography>
-                <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                  {play.label}
-                </Typography>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    {play.label}
+                  </Typography>
+                  {isTouchdown && <Chip label="TD" size="small" color="success" />}
+                  {isInterception && <Chip label="INT" size="small" color="error" />}
+                  {isFumble && <Chip label="FUMBLE" size="small" color="warning" />}
+                  {isIncomplete && <Chip label="INC" size="small" color="info" />}
+                </Stack>
                 <Typography variant="body2" color="text.secondary">
                   {play.yards} yards
                 </Typography>

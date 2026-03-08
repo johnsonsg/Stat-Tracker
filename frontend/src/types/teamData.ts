@@ -3,6 +3,7 @@ export type TeamPlayer = {
   name: string;
   number: string;
   position: string;
+  positionGroup?: string[];
 };
 
 export type TeamScheduleGame = {

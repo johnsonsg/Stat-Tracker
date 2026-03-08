@@ -1,5 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type SyntheticEvent } from "react";
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Alert,
   Box,
   Button,
@@ -19,12 +22,14 @@ import {
   Snackbar,
   Stack,
   Switch,
+  Tab,
+  Tabs,
   TextField,
   Tooltip,
   Typography
 } from "@mui/material";
 import { useAuth } from "@clerk/clerk-react";
-import { Keyboard } from "lucide-react";
+import { ChevronDown, Keyboard } from "lucide-react";
 import GameBar from "./components/GameBar";
 import PlayTypeSelector from "./components/PlayTypeSelector";
 import PlayerSelector from "./components/PlayerSelector";
@@ -33,8 +38,11 @@ import PlayTimeline from "./components/PlayTimeline";
 import QuickRoster from "./components/QuickRoster";
 import type { TeamPlayer, TeamScheduleGame } from "@/types/teamData";
 import PlayConfirmationBanner from "./components/PlayConfirmationBanner";
+import Scoreboard from "@/components/Scoreboard";
 import { socket } from "@/services/socket";
 import { useHotkeys } from "react-hotkeys-hook";
+import { usePlayerFlags } from "@/state/playerFlags";
+import { getSessionStorage } from "@/state/storage";
 
 type PlaySummary = {
   id: string;
@@ -69,6 +77,10 @@ type GameSummary = {
   awayTeam: string;
   gameDate: string;
   status: string;
+  score?: {
+    home?: number;
+    away?: number;
+  };
 };
 
 type SnackbarState = {
@@ -116,6 +128,7 @@ const RESULT_HOTKEYS = {
   "+5": "5",
   "+10": "0",
   "+20": "2",
+  INC: "c",
   TD: "d",
   INT: "i",
   FUMBLE: "f"
@@ -128,6 +141,9 @@ export default function StatEntryPage({
   schedule,
   teamName
 }: StatEntryPageProps) {
+  const accordionStorageKey = "stat-tracker:stat-entry-accordions";
+  const positionGroupStorageKey = "stat-tracker:stat-entry-position-group";
+  const accordionStorage = useMemo(() => getSessionStorage(), []);
   const { getToken } = useAuth();
   const [playType, setPlayType] = useState<string | undefined>();
   const [primaryPlayer, setPrimaryPlayer] = useState<TeamPlayer | null>(null);
@@ -185,11 +201,168 @@ export default function StatEntryPage({
     distance: 10,
     yardLine: 25
   });
+  const [score, setScore] = useState({ home: 0, away: 0 });
+  const [isScoreUpdating, setIsScoreUpdating] = useState(false);
+  const [showAllPlayers, setShowAllPlayers] = useState(false);
+  const [positionGroupTab, setPositionGroupTab] = useState(() => {
+    const stored = accordionStorage.getItem(positionGroupStorageKey);
+    if (stored === "offense" || stored === "defense" || stored === "special" || stored === "all") {
+      return stored;
+    }
+    return "all";
+  });
+  const [accordionState, setAccordionState] = useState(() => {
+    const fallback = { scoreboard: true, primary: true, secondary: true, starters: true };
+    const raw = accordionStorage.getItem(accordionStorageKey);
+    if (!raw) {
+      return fallback;
+    }
+    try {
+      const parsed = JSON.parse(raw) as Partial<typeof fallback>;
+      return {
+        scoreboard: parsed.scoreboard ?? fallback.scoreboard,
+        primary: parsed.primary ?? fallback.primary,
+        secondary: parsed.secondary ?? fallback.secondary,
+        starters: parsed.starters ?? fallback.starters
+      };
+    } catch {
+      return fallback;
+    }
+  });
+  const { primaryIds, secondaryIds, starterIds } = usePlayerFlags();
 
   const quickPrimary = useMemo(() => (lastPrimary ? [lastPrimary] : []), [lastPrimary]);
   const quickSecondary = useMemo(() => (lastSecondary ? [lastSecondary] : []), [lastSecondary]);
   const rosterById = useMemo(() => new Map(roster.map((player) => [player.id, player])), [roster]);
-  const playTypeOptions = ["pass", "run", "sack", "punt", "fg", "penalty", "turnover"];
+  const primaryFlagged = useMemo(
+    () => roster.filter((player) => primaryIds.includes(player.id)),
+    [primaryIds, roster]
+  );
+  const secondaryFlagged = useMemo(
+    () => roster.filter((player) => secondaryIds.includes(player.id)),
+    [secondaryIds, roster]
+  );
+  const starterFlagged = useMemo(
+    () => roster.filter((player) => starterIds.includes(player.id)),
+    [starterIds, roster]
+  );
+
+  const normalizeGroup = useCallback((value: string) => value.trim().toLowerCase(), []);
+
+  const matchesGroup = useCallback(
+    (player: TeamPlayer, tab: string) => {
+      if (tab === "all") {
+        return true;
+      }
+      const groups = player.positionGroup ?? [];
+      return groups.some((group) => {
+        const normalized = normalizeGroup(group);
+        if (tab === "special") {
+          return (
+            normalized === "special" ||
+            normalized === "special teams" ||
+            normalized === "special-teams"
+          );
+        }
+        return normalized === tab;
+      });
+    },
+    [normalizeGroup]
+  );
+
+  const matchesPositionGroup = useCallback(
+    (player: TeamPlayer) => matchesGroup(player, positionGroupTab),
+    [matchesGroup, positionGroupTab]
+  );
+
+  const filterByGroup = useCallback(
+    (list: TeamPlayer[]) => list.filter(matchesPositionGroup),
+    [matchesPositionGroup]
+  );
+
+  const filteredQuickPrimary = useMemo(
+    () => filterByGroup(quickPrimary),
+    [filterByGroup, quickPrimary]
+  );
+  const filteredQuickSecondary = useMemo(
+    () => filterByGroup(quickSecondary),
+    [filterByGroup, quickSecondary]
+  );
+  const filteredPrimaryFlagged = useMemo(
+    () => filterByGroup(primaryFlagged),
+    [filterByGroup, primaryFlagged]
+  );
+  const filteredSecondaryFlagged = useMemo(
+    () => filterByGroup(secondaryFlagged),
+    [filterByGroup, secondaryFlagged]
+  );
+  const filteredStarterFlagged = useMemo(
+    () => filterByGroup(starterFlagged),
+    [filterByGroup, starterFlagged]
+  );
+
+  const groupCounts = useMemo(() => {
+    return {
+      all: roster.length,
+      offense: roster.filter((player) => matchesGroup(player, "offense")).length,
+      defense: roster.filter((player) => matchesGroup(player, "defense")).length,
+      special: roster.filter((player) => matchesGroup(player, "special")).length
+    };
+  }, [matchesGroup, roster]);
+
+  const primaryRoster = useMemo(() => {
+    const base = showAllPlayers || primaryFlagged.length === 0 ? roster : primaryFlagged;
+    return filterByGroup(base);
+  }, [filterByGroup, primaryFlagged, roster, showAllPlayers]);
+
+  const secondaryRoster = useMemo(() => {
+    const base = showAllPlayers || secondaryFlagged.length === 0 ? roster : secondaryFlagged;
+    return filterByGroup(base);
+  }, [filterByGroup, secondaryFlagged, roster, showAllPlayers]);
+
+  const renderTabLabel = (label: string, count: number) => (
+    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+      <Box component="span">{label}</Box>
+      <Box
+        component="span"
+        sx={{
+          px: 1,
+          borderRadius: 999,
+          bgcolor: "action.selected",
+          fontSize: "0.75rem",
+          fontWeight: 600
+        }}
+      >
+        {count}
+      </Box>
+    </Box>
+  );
+
+  const handleAccordionChange = useCallback(
+    (key: "scoreboard" | "primary" | "secondary" | "starters") =>
+      (_event: SyntheticEvent, expanded: boolean) => {
+        setAccordionState((prev) => ({ ...prev, [key]: expanded }));
+      },
+    []
+  );
+
+  useEffect(() => {
+    accordionStorage.setItem(accordionStorageKey, JSON.stringify(accordionState));
+  }, [accordionState, accordionStorage]);
+
+  useEffect(() => {
+    accordionStorage.setItem(positionGroupStorageKey, positionGroupTab);
+  }, [accordionStorage, positionGroupTab]);
+  const playTypeOptions = [
+    "pass",
+    "incomplete",
+    "run",
+    "sack",
+    "punt",
+    "fg",
+    "penalty",
+    "turnover"
+  ];
   const activeGameId = gameId ?? (selectedGameId || null);
   const isEditingDialogOpen = isEditOpen || isCreateOpen;
   const isShortcutOpen = Boolean(shortcutAnchor);
@@ -279,6 +452,30 @@ export default function StatEntryPage({
     [games, selectedGameId]
   );
 
+  const resolveScore = useCallback((game: GameSummary | null) => {
+    return {
+      home: game?.score?.home ?? 0,
+      away: game?.score?.away ?? 0
+    };
+  }, []);
+
+  const resolveTeamSide = useCallback(
+    (game: GameSummary | null) => {
+      if (!game) {
+        return "home" as const;
+      }
+      const team = normalizeText(normalizedTeamName);
+      if (team && normalizeText(game.homeTeam) === team) {
+        return "home" as const;
+      }
+      if (team && normalizeText(game.awayTeam) === team) {
+        return "away" as const;
+      }
+      return "home" as const;
+    },
+    [normalizedTeamName]
+  );
+
   const shouldIgnoreHotkey = (event?: KeyboardEvent) => {
     const target = event?.target as HTMLElement | null;
     if (!target) {
@@ -315,6 +512,14 @@ export default function StatEntryPage({
       const player = rosterById.get(playerId);
       return player ? `#${player.number}` : playerId;
     };
+
+    if (playType === "INCOMPLETE") {
+      const primary = passer ? `#${passer.number}` : formatPlayer(play.players?.passerId);
+      const secondary = receiver ? `#${receiver.number}` : formatPlayer(play.players?.receiverId);
+      return secondary
+        ? `PASS ${primary} -> INC (${secondary})`
+        : `PASS ${primary} -> INC`;
+    }
 
     if (playType === "PASS") {
       const primary = passer ? `#${passer.number}` : formatPlayer(play.players?.passerId);
@@ -377,6 +582,56 @@ export default function StatEntryPage({
     }
   }, []);
 
+  const updateScore = useCallback(
+    async (nextScore: { home: number; away: number }) => {
+      if (!selectedGame) {
+        return;
+      }
+      setIsScoreUpdating(true);
+      try {
+        const token = await getToken();
+        if (!token) {
+          throw new Error("Missing session token");
+        }
+        const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
+        const response = await fetch(`${apiBase}/api/games/${selectedGame._id}/score`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify(nextScore)
+        });
+        if (!response.ok) {
+          const message = await response.text();
+          throw new Error(message || "Failed to update score");
+        }
+        const updated = (await response.json()) as GameSummary;
+        setScore(resolveScore(updated));
+        setGames((prev) => prev.map((game) => (game._id === updated._id ? updated : game)));
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to update score";
+        setError(message);
+        showSnackbar(message, "error");
+      } finally {
+        setIsScoreUpdating(false);
+      }
+    },
+    [getToken, resolveScore, selectedGame, showSnackbar]
+  );
+
+  const handleAdjustScore = useCallback(
+    async (team: "home" | "away", delta: number) => {
+      const next = {
+        home: score.home,
+        away: score.away
+      };
+      next[team] = Math.max(0, next[team] + delta);
+      await updateScore(next);
+    },
+    [score.away, score.home, updateScore]
+  );
+
   const finalizePendingPlay = useCallback(
     async (play: PendingPlay) => {
       if (!activeGameId) {
@@ -423,6 +678,10 @@ export default function StatEntryPage({
             return [nextPlay, ...prev];
           });
         }
+        if (play.touchdown) {
+          const teamSide = resolveTeamSide(selectedGame);
+          await handleAdjustScore(teamSide, 6);
+        }
         setLastPrimary(primaryPlayer);
         setLastSecondary(secondaryPlayer);
         setGameState((prev) => {
@@ -445,8 +704,11 @@ export default function StatEntryPage({
       activeGameId,
       clearPendingTimer,
       getToken,
+      handleAdjustScore,
       mapPlayToSummary,
       primaryPlayer,
+      resolveTeamSide,
+      selectedGame,
       secondaryPlayer,
       showSnackbar
     ]
@@ -493,6 +755,10 @@ export default function StatEntryPage({
       setSelectedGameId(gameId);
     }
   }, [gameId]);
+
+  useEffect(() => {
+    setScore(resolveScore(selectedGame));
+  }, [resolveScore, selectedGame]);
 
   useEffect(() => {
     let isMounted = true;
@@ -696,6 +962,7 @@ export default function StatEntryPage({
     }
   };
 
+
   const createGameFromSchedule = async (item: TeamScheduleGame) => {
     if (!normalizedTeamName) {
       showSnackbar("Set your team name before creating a game.", "error");
@@ -784,7 +1051,7 @@ export default function StatEntryPage({
       autoCreateRef.current = true;
       void createGameFromSchedule(sortedSchedule[0]);
     }
-  }, [games.length, gamesLoading, normalizedTeamName, selectedGameId, sortedSchedule, createGameFromSchedule]);
+  }, [createGameFromSchedule, games.length, gamesLoading, hasLoadedGames, normalizedTeamName, selectedGameId, sortedSchedule]);
 
   const handleStartGame = async () => {
     if (!selectedGame) {
@@ -929,7 +1196,7 @@ export default function StatEntryPage({
     setEditTarget("saved");
     const playType = match.playType?.toLowerCase() ?? "pass";
     const primaryId =
-      playType === "pass"
+      playType === "pass" || playType === "incomplete"
         ? match.players?.passerId
         : playType === "run" || playType === "sack"
         ? match.players?.rusherId
@@ -953,7 +1220,7 @@ export default function StatEntryPage({
     }
 
     const payloadPlayers: PlaySummary["players"] = {};
-    if (editForm.playType === "pass") {
+    if (editForm.playType === "pass" || editForm.playType === "incomplete") {
       if (editForm.primaryPlayerId) {
         payloadPlayers.passerId = editForm.primaryPlayerId;
       }
@@ -1067,11 +1334,26 @@ export default function StatEntryPage({
     setError(null);
     setIsSaving(true);
 
+    if (result === "INC" && playType !== "PASS") {
+      showSnackbar("Incomplete is only for pass plays.", "error");
+      setIsSaving(false);
+      return;
+    }
+
     const yards = result.startsWith("+") ? Number(result.replace("+", "")) : 0;
     const touchdown = result === "TD";
     const turnover = result === "INT" || result === "FUMBLE";
+    const isIncomplete = result === "INC";
 
-    const note = touchdown ? "Touchdown" : turnover ? "Turnover" : undefined;
+    const note = touchdown
+      ? "Touchdown"
+      : result === "INT"
+      ? "INT"
+      : result === "FUMBLE"
+      ? "Fumble"
+      : isIncomplete
+      ? "Incomplete"
+      : undefined;
     const playersPayload: Record<string, string> = {};
 
     if (playType === "PASS") {
@@ -1094,11 +1376,11 @@ export default function StatEntryPage({
       down: gameState.down,
       distance: gameState.distance,
       yardLine: gameState.yardLine,
-      playType: playType.toLowerCase(),
+      playType: (isIncomplete ? "incomplete" : playType.toLowerCase()),
       players: Object.keys(playersPayload).length ? playersPayload : undefined,
-      yards,
-      touchdown,
-      turnover,
+      yards: isIncomplete ? 0 : yards,
+      touchdown: isIncomplete ? false : touchdown,
+      turnover: isIncomplete ? false : turnover,
       notes: note
     };
 
@@ -1284,6 +1566,12 @@ export default function StatEntryPage({
     }
     triggerResult("+20");
   });
+  useHotkeys(RESULT_HOTKEYS.INC, (event) => {
+    if (isEditingDialogOpen || shouldIgnoreHotkey(event)) {
+      return;
+    }
+    triggerResult("INC");
+  });
   useHotkeys(RESULT_HOTKEYS.TD, (event) => {
     if (isEditingDialogOpen || shouldIgnoreHotkey(event)) {
       return;
@@ -1367,6 +1655,43 @@ export default function StatEntryPage({
     >
       <Stack spacing={3}>
         {error && <Alert severity="error">{error}</Alert>}
+        <Accordion
+          expanded={accordionState.scoreboard}
+          onChange={handleAccordionChange("scoreboard")}
+          sx={{ border: "1px solid", borderColor: "divider" }}
+        >
+          <AccordionSummary expandIcon={<ChevronDown size={18} />}>
+            <Typography variant="subtitle2" color="text.secondary">
+              Scoreboard
+            </Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            <Scoreboard
+              homeLabel={selectedGame?.homeTeam ?? "Home"}
+              awayLabel={selectedGame?.awayTeam ?? "Away"}
+              homeScore={score.home}
+              awayScore={score.away}
+              onAdjustScore={handleAdjustScore}
+              isUpdating={isScoreUpdating}
+            />
+          </AccordionDetails>
+        </Accordion>
+        <Paper elevation={1} sx={{ p: 2 }}>
+          <Stack spacing={1} direction={{ xs: "column", sm: "row" }} alignItems={{ sm: "center" }}>
+            <Typography variant="subtitle2" color="text.secondary">
+              Roster filter
+            </Typography>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={showAllPlayers}
+                  onChange={(event) => setShowAllPlayers(event.target.checked)}
+                />
+              }
+              label={showAllPlayers ? "Showing all players" : "Showing flagged players"}
+            />
+          </Stack>
+        </Paper>
         <Paper elevation={1} sx={{ p: 2 }}>
           <Stack spacing={2}>
             <Typography variant="subtitle2" color="text.secondary">
@@ -1546,6 +1871,7 @@ export default function StatEntryPage({
                       { label: "+5", key: RESULT_HOTKEYS["+5"].toUpperCase() },
                       { label: "+10", key: RESULT_HOTKEYS["+10"].toUpperCase() },
                       { label: "+20", key: RESULT_HOTKEYS["+20"].toUpperCase() },
+                      { label: "INC", key: RESULT_HOTKEYS.INC.toUpperCase() },
                       { label: "TD", key: RESULT_HOTKEYS.TD.toUpperCase() },
                       { label: "INT", key: RESULT_HOTKEYS.INT.toUpperCase() },
                       { label: "Fumble", key: RESULT_HOTKEYS.FUMBLE.toUpperCase() }
@@ -1621,71 +1947,156 @@ export default function StatEntryPage({
 
         <PlayTypeSelector selected={playType} onSelect={setPlayType} />
 
-        <Paper
-          elevation={1}
-          ref={primarySelectorRef}
+        <Paper elevation={1} sx={{ p: 1 }}>
+          <Tabs
+            value={positionGroupTab}
+            onChange={(_, value) => setPositionGroupTab(value)}
+            variant="scrollable"
+            allowScrollButtonsMobile
+          >
+            <Tab value="all" label={renderTabLabel("All", groupCounts.all)} />
+            <Tab value="offense" label={renderTabLabel("Offense", groupCounts.offense)} />
+            <Tab value="defense" label={renderTabLabel("Defense", groupCounts.defense)} />
+            <Tab value="special" label={renderTabLabel("Special Teams", groupCounts.special)} />
+          </Tabs>
+        </Paper>
+
+        <Accordion
+          expanded={accordionState.primary}
+          onChange={handleAccordionChange("primary")}
           sx={{
-            p: 2,
             border: "1px solid",
             borderColor: isPrimaryActive ? "primary.main" : "divider"
           }}
         >
-          <Stack spacing={2}>
+          <AccordionSummary expandIcon={<ChevronDown size={18} />}>
             <Typography variant="subtitle2" color="text.secondary">
               Primary player
             </Typography>
-            <QuickRoster
-              title="Recent"
-              players={quickPrimary}
-              onSelect={(player) => {
-                setActivePlayerField("primary");
-                setPrimaryPlayer(player);
-              }}
-            />
-            <PlayerSelector
-              title="Roster"
-              players={roster}
-              selected={primaryPlayer}
-              onSelect={(player) => {
-                setActivePlayerField("primary");
-                setPrimaryPlayer(player);
-              }}
-            />
-          </Stack>
-        </Paper>
+          </AccordionSummary>
+          <AccordionDetails ref={primarySelectorRef}>
+            <Stack spacing={2}>
+              <QuickRoster
+                title="Recent"
+                players={filteredQuickPrimary}
+                onSelect={(player) => {
+                  setActivePlayerField("primary");
+                  setPrimaryPlayer(player);
+                }}
+              />
+              {filteredPrimaryFlagged.length > 0 && (
+                <QuickRoster
+                  title="Primary picks"
+                  players={filteredPrimaryFlagged}
+                  onSelect={(player) => {
+                    setActivePlayerField("primary");
+                    setPrimaryPlayer(player);
+                  }}
+                />
+              )}
+              {primaryRoster.length > 0 ? (
+                <PlayerSelector
+                  title="Roster"
+                  players={primaryRoster}
+                  selected={primaryPlayer}
+                  onSelect={(player) => {
+                    setActivePlayerField("primary");
+                    setPrimaryPlayer(player);
+                  }}
+                />
+              ) : (
+                <Typography variant="body2" color="text.secondary">
+                  No players in this group.
+                </Typography>
+              )}
+            </Stack>
+          </AccordionDetails>
+        </Accordion>
 
-        <Paper
-          elevation={1}
-          ref={secondarySelectorRef}
+        <Accordion
+          expanded={accordionState.secondary}
+          onChange={handleAccordionChange("secondary")}
           sx={{
-            p: 2,
             border: "1px solid",
             borderColor: isPrimaryActive ? "divider" : "primary.main"
           }}
         >
-          <Stack spacing={2}>
+          <AccordionSummary expandIcon={<ChevronDown size={18} />}>
             <Typography variant="subtitle2" color="text.secondary">
               Secondary player
             </Typography>
-            <QuickRoster
-              title="Recent"
-              players={quickSecondary}
-              onSelect={(player) => {
-                setActivePlayerField("secondary");
-                setSecondaryPlayer(player);
-              }}
-            />
-            <PlayerSelector
-              title="Roster"
-              players={roster}
-              selected={secondaryPlayer}
-              onSelect={(player) => {
-                setActivePlayerField("secondary");
-                setSecondaryPlayer(player);
-              }}
-            />
-          </Stack>
-        </Paper>
+          </AccordionSummary>
+          <AccordionDetails ref={secondarySelectorRef}>
+            <Stack spacing={2}>
+              <QuickRoster
+                title="Recent"
+                players={filteredQuickSecondary}
+                onSelect={(player) => {
+                  setActivePlayerField("secondary");
+                  setSecondaryPlayer(player);
+                }}
+              />
+              {filteredSecondaryFlagged.length > 0 && (
+                <QuickRoster
+                  title="Secondary picks"
+                  players={filteredSecondaryFlagged}
+                  onSelect={(player) => {
+                    setActivePlayerField("secondary");
+                    setSecondaryPlayer(player);
+                  }}
+                />
+              )}
+              {secondaryRoster.length > 0 ? (
+                <PlayerSelector
+                  title="Roster"
+                  players={secondaryRoster}
+                  selected={secondaryPlayer}
+                  onSelect={(player) => {
+                    setActivePlayerField("secondary");
+                    setSecondaryPlayer(player);
+                  }}
+                />
+              ) : (
+                <Typography variant="body2" color="text.secondary">
+                  No players in this group.
+                </Typography>
+              )}
+            </Stack>
+          </AccordionDetails>
+        </Accordion>
+
+        {starterFlagged.length > 0 && (
+          <Accordion
+            expanded={accordionState.starters}
+            onChange={handleAccordionChange("starters")}
+            sx={{ border: "1px solid", borderColor: "divider" }}
+          >
+            <AccordionSummary expandIcon={<ChevronDown size={18} />}>
+              <Typography variant="subtitle2" color="text.secondary">
+                Starters (click to set {isPrimaryActive ? "Primary" : "Secondary"})
+              </Typography>
+            </AccordionSummary>
+            <AccordionDetails>
+              {filteredStarterFlagged.length > 0 ? (
+                <QuickRoster
+                  title="Starters"
+                  players={filteredStarterFlagged}
+                  onSelect={(player) => {
+                    if (isPrimaryActive) {
+                      setPrimaryPlayer(player);
+                    } else {
+                      setSecondaryPlayer(player);
+                    }
+                  }}
+                />
+              ) : (
+                <Typography variant="body2" color="text.secondary">
+                  No starters in this group.
+                </Typography>
+              )}
+            </AccordionDetails>
+          </Accordion>
+        )}
 
         <Box
           sx={{
@@ -1818,7 +2229,7 @@ export default function StatEntryPage({
                 ))}
               </Select>
             </FormControl>
-            {editForm.playType === "pass" && (
+            {(editForm.playType === "pass" || editForm.playType === "incomplete") && (
               <FormControl fullWidth size="small">
                 <InputLabel id="edit-secondary">Secondary player</InputLabel>
                 <Select

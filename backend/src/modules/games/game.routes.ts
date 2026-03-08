@@ -1,6 +1,11 @@
 import { Router } from "express";
 import { asyncHandler } from "../../utils/asyncHandler";
-import { createGameHandler, listGamesHandler, updateGameStatusHandler } from "./game.controller";
+import {
+	createGameHandler,
+	listGamesHandler,
+	updateGameScoreHandler,
+	updateGameStatusHandler
+} from "./game.controller";
 import { requireOrgRole } from "../../middleware/authorization";
 
 const router = Router();
@@ -93,6 +98,40 @@ router.put(
 	"/:gameId/status",
 	requireOrgRole(["org:admin", "org:member"]),
 	asyncHandler(updateGameStatusHandler)
+);
+
+/**
+ * @openapi
+ * /api/games/{gameId}/score:
+ *   put:
+ *     summary: Update game score
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: gameId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               home:
+ *                 type: integer
+ *               away:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: Game score updated
+ */
+router.put(
+  "/:gameId/score",
+  requireOrgRole(["org:admin", "org:member"]),
+  asyncHandler(updateGameScoreHandler)
 );
 
 export default router;

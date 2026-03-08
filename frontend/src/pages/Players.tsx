@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Box,
@@ -30,6 +30,8 @@ type PlayerGameStat = {
   _id: string;
   playerId: string;
   passing?: number;
+  passingAttempts?: number;
+  passingCompletions?: number;
   rushing?: number;
   receiving?: number;
   tackles?: number;
@@ -57,26 +59,29 @@ export default function Players() {
     [teamData]
   );
 
-  const getNumber = (stat: PlayerGameStat, key: string) => {
+  const getNumber = useCallback((stat: PlayerGameStat, key: string) => {
     const value = (stat as Record<string, unknown>)[key];
     return typeof value === "number" && Number.isFinite(value) ? value : 0;
-  };
+  }, []);
 
-  const getFirstNumber = (stat: PlayerGameStat, keys: string[]) => {
-    for (const key of keys) {
-      const value = getNumber(stat, key);
-      if (value) {
-        return value;
+  const getFirstNumber = useCallback(
+    (stat: PlayerGameStat, keys: string[]) => {
+      for (const key of keys) {
+        const value = getNumber(stat, key);
+        if (value) {
+          return value;
+        }
       }
-    }
-    return 0;
-  };
+      return 0;
+    },
+    [getNumber]
+  );
 
-  const round1 = (value: number) => Math.round(value * 10) / 10;
+  const round1 = useCallback((value: number) => Math.round(value * 10) / 10, []);
 
-  const safeDiv = (num: number, denom: number) => (denom ? num / denom : 0);
+  const safeDiv = useCallback((num: number, denom: number) => (denom ? num / denom : 0), []);
 
-  const qbRating = (comp: number, att: number, yds: number, td: number, ints: number) => {
+  const qbRating = useCallback((comp: number, att: number, yds: number, td: number, ints: number) => {
     if (!att) {
       return 0;
     }
@@ -85,14 +90,17 @@ export default function Players() {
     const c = Math.max(0, Math.min(2.375, (td / att) * 20));
     const d = Math.max(0, Math.min(2.375, 2.375 - (ints / att) * 25));
     return round1(((a + b + c + d) / 6) * 100);
-  };
+  }, [round1]);
 
-  const baseColumns: GridColDef[] = [
-    { field: "number", headerName: "#", width: 60, minWidth: 60, align: "left", headerAlign: "left" },
-    { field: "athlete", headerName: "Athlete", width: 220, minWidth: 220, align: "left", headerAlign: "left" }
-  ];
+  const baseColumns = useMemo<GridColDef[]>(
+    () => [
+      { field: "number", headerName: "#", width: 60, minWidth: 60, align: "left", headerAlign: "left" },
+      { field: "athlete", headerName: "Athlete", width: 220, minWidth: 220, align: "left", headerAlign: "left" }
+    ],
+    []
+  );
 
-  const statCol = (field: string, headerName: string): GridColDef => ({
+  const statCol = useCallback((field: string, headerName: string): GridColDef => ({
     field,
     headerName,
     type: "number",
@@ -100,9 +108,9 @@ export default function Players() {
     minWidth: 75,
     align: "left",
     headerAlign: "left"
-  });
+  }), []);
 
-  const percentCol = (field: string, headerName: string): GridColDef => ({
+  const percentCol = useCallback((field: string, headerName: string): GridColDef => ({
     field,
     headerName,
     flex: 1,
@@ -110,9 +118,9 @@ export default function Players() {
     align: "left",
     headerAlign: "left",
     valueFormatter: ({ value }) => `${round1(Number(value ?? 0))}%`
-  });
+  }), [round1]);
 
-  const avgCol = (field: string, headerName: string): GridColDef => ({
+  const avgCol = useCallback((field: string, headerName: string): GridColDef => ({
     field,
     headerName,
     flex: 1,
@@ -120,7 +128,7 @@ export default function Players() {
     align: "left",
     headerAlign: "left",
     valueFormatter: ({ value }) => round1(Number(value ?? 0)).toFixed(1)
-  });
+  }), [round1]);
 
   const categories = useMemo(
     () => ({
@@ -384,7 +392,7 @@ export default function Players() {
           })
       }
     }),
-    [playersById, stats]
+    [avgCol, baseColumns, getFirstNumber, percentCol, playersById, qbRating, safeDiv, statCol, stats]
   );
 
   const activeCategory = categories[activeTab];

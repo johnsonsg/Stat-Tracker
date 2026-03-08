@@ -20,3 +20,20 @@ export function getBrowserStorage(): StorageLike {
     },
   };
 }
+
+export function getSessionStorage(): StorageLike {
+  if (typeof window !== "undefined" && window.sessionStorage) {
+    return window.sessionStorage;
+  }
+
+  const memory = new Map<string, string>();
+  return {
+    getItem: (key) => memory.get(key) ?? null,
+    setItem: (key, value) => {
+      memory.set(key, value);
+    },
+    removeItem: (key) => {
+      memory.delete(key);
+    },
+  };
+}

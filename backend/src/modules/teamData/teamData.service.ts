@@ -17,7 +17,8 @@ const mapPlayer = (player: TenantPlayer) => ({
   id: player.id,
   name: player.name,
   number: player.number,
-  position: player.position
+  position: player.position,
+  positionGroup: player.positionGroup ?? []
 });
 
 const mapScheduleGame = (game: TenantScheduleGame) => ({

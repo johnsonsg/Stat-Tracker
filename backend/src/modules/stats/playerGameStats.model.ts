@@ -6,6 +6,8 @@ const PlayerGameStatsSchema = new Schema(
     gameId: { type: Schema.Types.ObjectId, ref: "Game", required: true },
     playerId: { type: String, required: true },
     passing: { type: Number, default: 0 },
+    passingAttempts: { type: Number, default: 0 },
+    passingCompletions: { type: Number, default: 0 },
     rushing: { type: Number, default: 0 },
     receiving: { type: Number, default: 0 },
     tackles: { type: Number, default: 0 },

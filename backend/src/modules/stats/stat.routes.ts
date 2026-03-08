@@ -17,6 +17,8 @@ const playerGameSchema = z.object({
   gameId: z.string().min(1),
   playerId: z.string().min(1),
   passing: z.number().int().nonnegative().optional(),
+  passingAttempts: z.number().int().nonnegative().optional(),
+  passingCompletions: z.number().int().nonnegative().optional(),
   rushing: z.number().int().nonnegative().optional(),
   receiving: z.number().int().nonnegative().optional(),
   tackles: z.number().int().nonnegative().optional(),

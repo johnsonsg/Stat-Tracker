@@ -20,3 +20,19 @@ export async function updateGameStatus(
     { new: true }
   ).lean();
 }
+
+export async function updateGameScore(
+  tenantId: string,
+  gameId: string,
+  score: { home?: number; away?: number }
+) {
+  const updates: Record<string, number> = {};
+  if (typeof score.home === "number") {
+    updates["score.home"] = score.home;
+  }
+  if (typeof score.away === "number") {
+    updates["score.away"] = score.away;
+  }
+
+  return Game.findOneAndUpdate({ _id: gameId, tenantId }, { $set: updates }, { new: true }).lean();
+}
