@@ -1973,7 +1973,7 @@ export default function StatEntryPage({
         >
           <AccordionSummary expandIcon={<ChevronDown size={18} />}>
             <Typography variant="subtitle2" color="text.secondary">
-              Primary player
+              Playmakers
             </Typography>
           </AccordionSummary>
           <AccordionDetails ref={primarySelectorRef}>
@@ -2007,7 +2007,7 @@ export default function StatEntryPage({
         >
           <AccordionSummary expandIcon={<ChevronDown size={18} />}>
             <Typography variant="subtitle2" color="text.secondary">
-              Secondary player
+              Other Players
             </Typography>
           </AccordionSummary>
           <AccordionDetails ref={secondarySelectorRef}>
