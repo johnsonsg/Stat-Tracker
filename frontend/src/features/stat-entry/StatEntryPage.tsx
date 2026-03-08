@@ -140,6 +140,7 @@ export default function StatEntryPage({
   const [isSaving, setIsSaving] = useState(false);
   const [games, setGames] = useState<GameSummary[]>([]);
   const [gamesLoading, setGamesLoading] = useState(false);
+  const [hasLoadedGames, setHasLoadedGames] = useState(false);
   const [selectedGameId, setSelectedGameId] = useState<string | "">(gameId ?? "");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -347,8 +348,9 @@ export default function StatEntryPage({
       touchdown?: boolean;
       turnover?: boolean;
     }): PlaySummary => {
+      const normalizeId = (value: unknown) => (value ? String(value) : "");
       const summary: PlaySummary = {
-        id: play._id,
+        id: normalizeId(play._id),
         sequence: play.sequence,
         playType: play.playType,
         yards: play.yards ?? 0,
@@ -413,7 +415,14 @@ export default function StatEntryPage({
           turnover?: boolean;
         };
         const nextPlay = mapPlayToSummary(saved);
-        setPlays((prev) => [nextPlay, ...prev]);
+        if (!socket.connected) {
+          setPlays((prev) => {
+            if (prev.some((item) => item.id === nextPlay.id)) {
+              return prev;
+            }
+            return [nextPlay, ...prev];
+          });
+        }
         setLastPrimary(primaryPlayer);
         setLastSecondary(secondaryPlayer);
         setGameState((prev) => {
@@ -583,8 +592,9 @@ export default function StatEntryPage({
     };
 
     const handleDeleted = (play: { _id: string }) => {
-      setPlays((prev) => prev.filter((item) => item.id !== play._id));
-      if (selectedPlay?.id === play._id) {
+      const deletedId = play?._id ? String(play._id) : "";
+      setPlays((prev) => prev.filter((item) => item.id !== deletedId));
+      if (selectedPlay?.id === deletedId) {
         setSelectedPlay(null);
       }
     };
@@ -650,6 +660,7 @@ export default function StatEntryPage({
       } finally {
         if (isMounted) {
           setGamesLoading(false);
+          setHasLoadedGames(true);
         }
       }
     };
@@ -691,6 +702,25 @@ export default function StatEntryPage({
       return;
     }
 
+    const matchup = inferMatchup(item);
+    const existing = games.find((game) => {
+      if (toDateKey(game.gameDate) !== toDateKey(item.dateTime)) {
+        return false;
+      }
+      return (
+        normalizeText(game.homeTeam) === normalizeText(matchup.homeTeam) &&
+        normalizeText(game.awayTeam) === normalizeText(matchup.awayTeam)
+      );
+    });
+
+    if (existing) {
+      setSelectedGameId(existing._id);
+      if (onSelectGame) {
+        onSelectGame(existing._id);
+      }
+      return;
+    }
+
     setIsScheduleCreating(true);
     try {
       const token = await getToken();
@@ -699,7 +729,6 @@ export default function StatEntryPage({
       }
 
       const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
-      const match = inferMatchup(item);
       const seasonDate = new Date(item.dateTime);
       const season = Number.isNaN(seasonDate.getTime())
         ? new Date().getFullYear()
@@ -713,8 +742,8 @@ export default function StatEntryPage({
         },
         body: JSON.stringify({
           season,
-          homeTeam: match.homeTeam,
-          awayTeam: match.awayTeam,
+          homeTeam: matchup.homeTeam,
+          awayTeam: matchup.awayTeam,
           gameDate: item.dateTime,
           status: "scheduled"
         })
@@ -745,7 +774,7 @@ export default function StatEntryPage({
     if (autoCreateRef.current) {
       return;
     }
-    if (gamesLoading || games.length > 0) {
+    if (!hasLoadedGames || gamesLoading || games.length > 0) {
       return;
     }
     if (!normalizedTeamName) {
@@ -784,6 +813,40 @@ export default function StatEntryPage({
       showSnackbar("Game marked live.", "success");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to start game";
+      setError(message);
+      showSnackbar(message, "error");
+    } finally {
+      setIsStatusUpdating(false);
+    }
+  };
+
+  const handleEndGame = async () => {
+    if (!selectedGame) {
+      return;
+    }
+    setIsStatusUpdating(true);
+    try {
+      const token = await getToken();
+      if (!token) {
+        throw new Error("Missing session token");
+      }
+      const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
+      const response = await fetch(`${apiBase}/api/games/${selectedGame._id}/status`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ status: "finished" })
+      });
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || "Failed to end game");
+      }
+      await refreshGames();
+      showSnackbar("Game marked finished.", "success");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to end game";
       setError(message);
       showSnackbar(message, "error");
     } finally {
@@ -1352,9 +1415,15 @@ export default function StatEntryPage({
                   const match = scheduleMatches.get(item.id);
                   const label = `vs ${item.opponent} · ${formatScheduleDate(item.dateTime)} · ${formatLocationLabel(item.location)}`;
                   if (match) {
+                    const statusLabel =
+                      match.status === "live"
+                        ? "Live"
+                        : match.status === "finished"
+                        ? "Final"
+                        : "Scheduled";
                     return (
                       <MenuItem key={`schedule-${item.id}`} value={match._id}>
-                        Scheduled: {label} · {match.status}
+                        {statusLabel}: {label}
                       </MenuItem>
                     );
                   }
@@ -1393,6 +1462,16 @@ export default function StatEntryPage({
                   disabled={isStatusUpdating || isScheduleCreating}
                 >
                   {isStatusUpdating ? "Starting..." : "Start Game"}
+                </Button>
+              )}
+              {selectedGame?.status === "live" && (
+                <Button
+                  variant="outlined"
+                  color="error"
+                  onClick={handleEndGame}
+                  disabled={isStatusUpdating || isScheduleCreating}
+                >
+                  {isStatusUpdating ? "Ending..." : "End Game"}
                 </Button>
               )}
             </Stack>

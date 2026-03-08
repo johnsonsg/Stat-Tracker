@@ -139,7 +139,11 @@ export async function upsertPlayerGameStats(
 }
 
 export async function listPlayerGameStats(tenantId: string, gameId: string) {
-  return PlayerGameStats.find({ tenantId, gameId }).lean();
+  if (!mongoose.isValidObjectId(gameId)) {
+    throw new Error("Invalid gameId");
+  }
+  const objectId = new mongoose.Types.ObjectId(gameId);
+  return PlayerGameStats.find({ tenantId, gameId: objectId }).lean();
 }
 
 export async function upsertTeamGameStats(
@@ -155,7 +159,11 @@ export async function upsertTeamGameStats(
 }
 
 export async function getTeamGameStats(tenantId: string, gameId: string) {
-  return TeamGameStats.findOne({ tenantId, gameId }).lean();
+  if (!mongoose.isValidObjectId(gameId)) {
+    throw new Error("Invalid gameId");
+  }
+  const objectId = new mongoose.Types.ObjectId(gameId);
+  return TeamGameStats.findOne({ tenantId, gameId: objectId }).lean();
 }
 
 export async function recomputeGameStats(tenantId: string, gameId: string) {

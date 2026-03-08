@@ -6,6 +6,7 @@ import { requireOrgRole } from "../../middleware/authorization";
 import {
   getTeamGameStats,
   listPlayerGameStats,
+  recomputeGameStats,
   upsertPlayerGameStats,
   upsertTeamGameStats
 } from "./statEngine.service";
@@ -115,7 +116,11 @@ router.get(
       return res.status(400).json({ error: "gameId is required" });
     }
 
-    const stats = await listPlayerGameStats(tenantId, gameId);
+    let stats = await listPlayerGameStats(tenantId, gameId);
+    if (stats.length === 0) {
+      await recomputeGameStats(tenantId, gameId);
+      stats = await listPlayerGameStats(tenantId, gameId);
+    }
     return res.json(stats);
   })
 );

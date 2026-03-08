@@ -4,7 +4,7 @@ const PlayerGameStatsSchema = new Schema(
   {
     tenantId: { type: String, required: true, index: true },
     gameId: { type: Schema.Types.ObjectId, ref: "Game", required: true },
-    playerId: { type: Schema.Types.ObjectId, ref: "Player", required: true },
+    playerId: { type: String, required: true },
     passing: { type: Number, default: 0 },
     rushing: { type: Number, default: 0 },
     receiving: { type: Number, default: 0 },

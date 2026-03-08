@@ -36,11 +36,16 @@ export async function createPlayEventHandler(req: Request, res: Response) {
 
   try {
     const play = await createPlayEvent(tenantId, gameId, parsed.data);
+    await recomputeGameStats(tenantId, gameId);
+    const payload = {
+      ...play.toObject(),
+      _id: play._id.toString()
+    };
     const io = getSocketServer();
     if (io) {
-      emitGameEvent(io, gameId, "playRecorded", play);
+      emitGameEvent(io, gameId, "playRecorded", payload);
     }
-    return res.status(201).json(play);
+    return res.status(201).json(payload);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to record play";
     const status = message === "Game not found" ? 404 : 400;
