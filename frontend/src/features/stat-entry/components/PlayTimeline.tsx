@@ -29,10 +29,11 @@ export default function PlayTimeline({ plays, selectedId, onSelect }: PlayTimeli
         {plays.map((play) => {
           const isSelected = selectedId === play.id;
           const note = play.note?.toLowerCase() ?? "";
-          const isIncomplete = note === "incomplete";
-          const isTouchdown = note === "touchdown";
-          const isInterception = note === "int";
-          const isFumble = note === "fumble";
+          const label = play.label.toLowerCase();
+          const isIncomplete = note === "incomplete" || label.includes("inc");
+          const isTouchdown = note === "touchdown" || label.includes("td");
+          const isInterception = note === "int" || label.includes("int");
+          const isFumble = note === "fumble" || label.includes("fumble");
           return (
             <Box
               key={play.id}

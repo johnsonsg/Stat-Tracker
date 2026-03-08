@@ -558,12 +558,28 @@ export default function StatEntryPage({
       turnover?: boolean;
     }): PlaySummary => {
       const normalizeId = (value: unknown) => (value ? String(value) : "");
+      const resolveNote = () => {
+        if (play.notes) {
+          return play.notes;
+        }
+        const playType = play.playType?.toLowerCase() ?? "";
+        if (playType === "incomplete") {
+          return "Incomplete";
+        }
+        if (play.touchdown) {
+          return "Touchdown";
+        }
+        if (play.turnover) {
+          return playType === "pass" ? "INT" : "Fumble";
+        }
+        return undefined;
+      };
       const summary: PlaySummary = {
         id: normalizeId(play._id),
         sequence: play.sequence,
         playType: play.playType,
         yards: play.yards ?? 0,
-        note: play.notes,
+        note: resolveNote(),
         players: play.players,
         touchdown: play.touchdown,
         turnover: play.turnover,
