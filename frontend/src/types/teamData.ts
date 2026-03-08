@@ -15,6 +15,7 @@ export type TeamScheduleGame = {
 
 export type TeamData = {
   teamName: string | null;
+  brandLogo?: string | null;
   players: TeamPlayer[];
   schedule: TeamScheduleGame[];
 };

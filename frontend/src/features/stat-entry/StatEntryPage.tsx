@@ -68,6 +68,7 @@ type StatEntryPageProps = {
   roster: TeamPlayer[];
   schedule: TeamScheduleGame[];
   teamName: string | null;
+  brandLogo?: string | null;
 };
 
 type GameSummary = {
@@ -138,7 +139,8 @@ export default function StatEntryPage({
   onSelectGame,
   roster,
   schedule,
-  teamName
+  teamName,
+  brandLogo
 }: StatEntryPageProps) {
   const accordionStorageKey = "stat-tracker:stat-entry-accordions";
   const positionGroupStorageKey = "stat-tracker:stat-entry-position-group";
@@ -200,6 +202,7 @@ export default function StatEntryPage({
   });
   const [score, setScore] = useState({ home: 0, away: 0 });
   const [isScoreUpdating, setIsScoreUpdating] = useState(false);
+  const [teamLogoUrl, setTeamLogoUrl] = useState<string | null>(null);
   const [positionGroupTab, setPositionGroupTab] = useState(() => {
     const stored = accordionStorage.getItem(positionGroupStorageKey);
     if (stored === "offense" || stored === "defense" || stored === "special" || stored === "all") {
@@ -357,6 +360,90 @@ export default function StatEntryPage({
   useEffect(() => {
     accordionStorage.setItem(positionGroupStorageKey, positionGroupTab);
   }, [accordionStorage, positionGroupTab]);
+
+  const isObjectId = (value: string) => /^[a-f\d]{24}$/i.test(value);
+
+  useEffect(() => {
+    let isMounted = true;
+    const resolveLogo = async () => {
+      if (!brandLogo) {
+        setTeamLogoUrl(null);
+        return;
+      }
+      if (brandLogo.startsWith("http")) {
+        setTeamLogoUrl(brandLogo);
+        return;
+      }
+      if (!isObjectId(brandLogo)) {
+        setTeamLogoUrl(null);
+        return;
+      }
+
+      const teamAppBase = (import.meta.env.VITE_TEAM_APP_BASE_URL ?? "http://localhost:3000").replace(
+        /\/+$/,
+        ""
+      );
+
+      try {
+        const encodedId = encodeURIComponent(brandLogo);
+        const candidates = [
+          `${teamAppBase}/api/media/${encodedId}`,
+          `${teamAppBase}/api/media?id=${encodedId}`,
+          `${teamAppBase}/api/media?mediaId=${encodedId}`
+        ];
+
+        for (const url of candidates) {
+          const response = await fetch(url);
+          if (!response.ok) {
+            let errorText = "";
+            try {
+              errorText = await response.text();
+            } catch {
+              errorText = "";
+            }
+            if (response.status === 400 && errorText.includes("Missing media id")) {
+              continue;
+            }
+            continue;
+          }
+
+          const data = (await response.json()) as {
+            url?: string;
+            doc?: { url?: string };
+            data?: { url?: string };
+            media?: { url?: string };
+          };
+          const rawUrl = data.url ?? data.doc?.url ?? data.data?.url ?? data.media?.url;
+          const resolvedUrl = rawUrl
+            ? rawUrl.startsWith("http")
+              ? rawUrl
+              : rawUrl.startsWith("//")
+              ? `https:${rawUrl}`
+              : rawUrl.startsWith("/")
+              ? `${teamAppBase}${rawUrl}`
+              : `${teamAppBase}/${rawUrl}`
+            : null;
+          if (isMounted) {
+            setTeamLogoUrl(resolvedUrl);
+          }
+          return;
+        }
+
+        if (isMounted) {
+          setTeamLogoUrl(null);
+        }
+      } catch {
+        if (isMounted) {
+          setTeamLogoUrl(null);
+        }
+      }
+    };
+
+    void resolveLogo();
+    return () => {
+      isMounted = false;
+    };
+  }, [brandLogo]);
   const playTypeOptions = [
     "pass",
     "incomplete",
@@ -382,20 +469,23 @@ export default function StatEntryPage({
     return date.toISOString().slice(0, 10);
   };
 
-  const normalizeText = (value: string) => value.trim().toLowerCase();
+  const normalizeText = useCallback((value: string) => value.trim().toLowerCase(), []);
 
-  const inferMatchup = (item: TeamScheduleGame) => {
-    const location = item.location.toLowerCase();
-    const isHome = location.includes("home");
-    const isAway = location.includes("away");
-    let homeTeam = normalizedTeamName || "Home";
-    let awayTeam = item.opponent;
-    if (isAway && !isHome) {
-      homeTeam = item.opponent;
-      awayTeam = normalizedTeamName || "Away";
-    }
-    return { homeTeam, awayTeam };
-  };
+  const inferMatchup = useCallback(
+    (item: TeamScheduleGame) => {
+      const location = item.location.toLowerCase();
+      const isHome = location.includes("home");
+      const isAway = location.includes("away");
+      let homeTeam = normalizedTeamName || "Home";
+      let awayTeam = item.opponent;
+      if (isAway && !isHome) {
+        homeTeam = item.opponent;
+        awayTeam = normalizedTeamName || "Away";
+      }
+      return { homeTeam, awayTeam };
+    },
+    [normalizedTeamName]
+  );
 
   const formatLocationLabel = (value: string) => {
     const location = value.toLowerCase();
@@ -434,7 +524,7 @@ export default function StatEntryPage({
       }
     });
     return matches;
-  }, [games, schedule]);
+  }, [games, normalizeText, schedule]);
 
   const sortedSchedule = useMemo(() => {
     return [...schedule].sort((a, b) => {
@@ -477,8 +567,30 @@ export default function StatEntryPage({
       }
       return "home" as const;
     },
-    [normalizedTeamName]
+    [normalizedTeamName, normalizeText]
   );
+
+  const scheduleOpponent = useMemo(() => {
+    if (!selectedGame) {
+      return null;
+    }
+    const match = schedule.find((item) => scheduleMatches.get(item.id)?._id === selectedGame._id);
+    return match?.opponent ?? null;
+  }, [schedule, scheduleMatches, selectedGame]);
+
+  const teamSide = resolveTeamSide(selectedGame);
+  const opponentName =
+    scheduleOpponent ??
+    (teamSide === "home"
+      ? selectedGame?.awayTeam ?? "Away"
+      : selectedGame?.homeTeam ?? "Home");
+  const teamLabel =
+    teamName ??
+    (teamSide === "home"
+      ? selectedGame?.homeTeam ?? "Home"
+      : selectedGame?.awayTeam ?? "Away");
+  const teamScore = teamSide === "home" ? score.home : score.away;
+  const opponentScore = teamSide === "home" ? score.away : score.home;
 
   const shouldIgnoreHotkey = (event?: KeyboardEvent) => {
     const target = event?.target as HTMLElement | null;
@@ -724,10 +836,8 @@ export default function StatEntryPage({
       getToken,
       handleAdjustScore,
       mapPlayToSummary,
-      primaryPlayer,
       resolveTeamSide,
       selectedGame,
-      secondaryPlayer,
       showSnackbar
     ]
   );
@@ -1673,6 +1783,7 @@ export default function StatEntryPage({
     >
       <Stack spacing={3}>
         {error && <Alert severity="error">{error}</Alert>}
+        <GameBar {...gameState} />
         <Accordion
           expanded={accordionState.scoreboard}
           onChange={handleAccordionChange("scoreboard")}
@@ -1685,126 +1796,18 @@ export default function StatEntryPage({
           </AccordionSummary>
           <AccordionDetails>
             <Scoreboard
-              homeLabel={selectedGame?.homeTeam ?? "Home"}
-              awayLabel={selectedGame?.awayTeam ?? "Away"}
-              homeScore={score.home}
-              awayScore={score.away}
+              teamLabel={teamLabel}
+              teamLogoUrl={teamLogoUrl}
+              opponentName={opponentName}
+              teamScore={teamScore}
+              opponentScore={opponentScore}
+              teamSide={teamSide}
               onAdjustScore={handleAdjustScore}
               isUpdating={isScoreUpdating}
+              isLive={selectedGame?.status === "live"}
             />
           </AccordionDetails>
         </Accordion>
-        <Paper elevation={1} sx={{ p: 2 }}>
-          <Stack spacing={2}>
-            <Typography variant="subtitle2" color="text.secondary">
-              Active game
-            </Typography>
-            <FormControl fullWidth size="small">
-              <InputLabel id="game-select-label">Game</InputLabel>
-              <Select
-                labelId="game-select-label"
-                label="Game"
-                value={selectedGameId}
-                onChange={(event) => {
-                  const nextId = event.target.value;
-                  if (typeof nextId !== "string") {
-                    return;
-                  }
-                  if (nextId.startsWith("schedule:")) {
-                    const scheduleId = nextId.replace("schedule:", "");
-                    const match = schedule.find((item) => item.id === scheduleId);
-                    if (match) {
-                      void createGameFromSchedule(match);
-                    }
-                    return;
-                  }
-
-                  setSelectedGameId(nextId);
-                  if (nextId && onSelectGame) {
-                    onSelectGame(nextId);
-                  }
-                }}
-              >
-                {gamesLoading && (
-                  <MenuItem value="" disabled>
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                      <CircularProgress size={16} />
-                      Loading games...
-                    </Box>
-                  </MenuItem>
-                )}
-                {!gamesLoading && games.length === 0 && schedule.length === 0 && (
-                  <MenuItem value="" disabled>
-                    No games available
-                  </MenuItem>
-                )}
-                {sortedSchedule.map((item) => {
-                  const match = scheduleMatches.get(item.id);
-                  const label = `vs ${item.opponent} · ${formatScheduleDate(item.dateTime)} · ${formatLocationLabel(item.location)}`;
-                  if (match) {
-                    const statusLabel =
-                      match.status === "live"
-                        ? "Live"
-                        : match.status === "finished"
-                        ? "Final"
-                        : "Scheduled";
-                    return (
-                      <MenuItem key={`schedule-${item.id}`} value={match._id}>
-                        {statusLabel}: {label}
-                      </MenuItem>
-                    );
-                  }
-                  return (
-                    <MenuItem key={`schedule-${item.id}`} value={`schedule:${item.id}`}>
-                      Scheduled: {label}
-                    </MenuItem>
-                  );
-                })}
-                {games
-                  .filter((game) => !matchedGameIds.has(game._id))
-                  .map((game) => (
-                    <MenuItem key={game._id} value={game._id}>
-                      {game.homeTeam} vs {game.awayTeam} · {new Date(game.gameDate).toLocaleDateString()} · {game.status}
-                    </MenuItem>
-                  ))}
-              </Select>
-            </FormControl>
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-              {schedule.length === 0 && (
-                <Button
-                  variant="contained"
-                  onClick={() => {
-                    setCreateErrors({});
-                    setIsCreateOpen(true);
-                  }}
-                  sx={{ alignSelf: "flex-start" }}
-                >
-                  Create Game
-                </Button>
-              )}
-              {selectedGame?.status === "scheduled" && (
-                <Button
-                  variant="outlined"
-                  onClick={handleStartGame}
-                  disabled={isStatusUpdating || isScheduleCreating}
-                >
-                  {isStatusUpdating ? "Starting..." : "Start Game"}
-                </Button>
-              )}
-              {selectedGame?.status === "live" && (
-                <Button
-                  variant="outlined"
-                  color="error"
-                  onClick={handleEndGame}
-                  disabled={isStatusUpdating || isScheduleCreating}
-                >
-                  {isStatusUpdating ? "Ending..." : "End Game"}
-                </Button>
-              )}
-            </Stack>
-          </Stack>
-        </Paper>
-        <GameBar {...gameState} />
         <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
           <Tooltip title="Keyboard shortcuts">
             <IconButton
@@ -2103,7 +2106,123 @@ export default function StatEntryPage({
         </Box>
       </Stack>
 
-      <PlayTimeline plays={plays} selectedId={selectedPlay?.id ?? null} onSelect={handleSelectPlay} />
+      <Stack spacing={3}>
+        <Paper elevation={1} sx={{ p: 2 }}>
+          <Stack spacing={2}>
+            <Typography variant="subtitle2" color="text.secondary">
+              Active game
+            </Typography>
+            <FormControl fullWidth size="small">
+              <InputLabel id="game-select-label">Game</InputLabel>
+              <Select
+                labelId="game-select-label"
+                label="Game"
+                value={selectedGameId}
+                onChange={(event) => {
+                  const nextId = event.target.value;
+                  if (typeof nextId !== "string") {
+                    return;
+                  }
+                  if (nextId.startsWith("schedule:")) {
+                    const scheduleId = nextId.replace("schedule:", "");
+                    const match = schedule.find((item) => item.id === scheduleId);
+                    if (match) {
+                      void createGameFromSchedule(match);
+                    }
+                    return;
+                  }
+
+                  setSelectedGameId(nextId);
+                  if (nextId && onSelectGame) {
+                    onSelectGame(nextId);
+                  }
+                }}
+              >
+                {gamesLoading && (
+                  <MenuItem value="" disabled>
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                      <CircularProgress size={16} />
+                      Loading games...
+                    </Box>
+                  </MenuItem>
+                )}
+                {!gamesLoading && games.length === 0 && schedule.length === 0 && (
+                  <MenuItem value="" disabled>
+                    No games available
+                  </MenuItem>
+                )}
+                {sortedSchedule.map((item) => {
+                  const match = scheduleMatches.get(item.id);
+                  const label = `vs ${item.opponent} · ${formatScheduleDate(item.dateTime)} · ${formatLocationLabel(item.location)}`;
+                  if (match) {
+                    const statusLabel =
+                      match.status === "live"
+                        ? "Live"
+                        : match.status === "finished"
+                        ? "Final"
+                        : "Scheduled";
+                    return (
+                      <MenuItem key={`schedule-${item.id}`} value={match._id}>
+                        {statusLabel}: {label}
+                      </MenuItem>
+                    );
+                  }
+                  return (
+                    <MenuItem key={`schedule-${item.id}`} value={`schedule:${item.id}`}>
+                      Scheduled: {label}
+                    </MenuItem>
+                  );
+                })}
+                {games
+                  .filter((game) => !matchedGameIds.has(game._id))
+                  .map((game) => (
+                    <MenuItem key={game._id} value={game._id}>
+                      {game.homeTeam} vs {game.awayTeam} · {new Date(game.gameDate).toLocaleDateString()} · {game.status}
+                    </MenuItem>
+                  ))}
+              </Select>
+            </FormControl>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+              {schedule.length === 0 && (
+                <Button
+                  variant="contained"
+                  onClick={() => {
+                    setCreateErrors({});
+                    setIsCreateOpen(true);
+                  }}
+                  sx={{ alignSelf: "flex-start" }}
+                >
+                  Create Game
+                </Button>
+              )}
+              {selectedGame?.status === "scheduled" && (
+                <Button
+                  variant="outlined"
+                  onClick={handleStartGame}
+                  disabled={isStatusUpdating || isScheduleCreating}
+                >
+                  {isStatusUpdating ? "Starting..." : "Start Game"}
+                </Button>
+              )}
+              {selectedGame?.status === "live" && (
+                <Button
+                  variant="outlined"
+                  color="error"
+                  onClick={handleEndGame}
+                  disabled={isStatusUpdating || isScheduleCreating}
+                >
+                  {isStatusUpdating ? "Ending..." : "End Game"}
+                </Button>
+              )}
+            </Stack>
+          </Stack>
+        </Paper>
+        <PlayTimeline
+          plays={plays}
+          selectedId={selectedPlay?.id ?? null}
+          onSelect={handleSelectPlay}
+        />
+      </Stack>
 
       <Dialog
         open={isCreateOpen}

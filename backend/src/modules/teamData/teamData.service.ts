@@ -68,10 +68,11 @@ const buildTenantScheduleGame = (input: CreateScheduleInput) => ({
 export async function getTeamData(tenantId: string) {
   const data = await TenantSettings.findOne({ tenantId }).lean<TenantSettingsDocument>();
   if (!data) {
-    return { teamName: null, players: [], schedule: [] };
+    return { teamName: null, brandLogo: null, players: [], schedule: [] };
   }
   return {
     teamName: data.metadata?.teamName ?? null,
+    brandLogo: (data as { brand?: { brandLogo?: string } }).brand?.brandLogo ?? null,
     players: (data.players ?? []).map(mapPlayer),
     schedule: (data.schedule?.games ?? []).map(mapScheduleGame)
   };
@@ -90,10 +91,11 @@ export async function updateTeamData(tenantId: string, input: TeamDataInput) {
   ).lean<TenantSettingsDocument>();
 
   if (!data) {
-    return { teamName: input.teamName ?? null, players: [], schedule: [] };
+    return { teamName: input.teamName ?? null, brandLogo: null, players: [], schedule: [] };
   }
   return {
     teamName: data.metadata?.teamName ?? null,
+    brandLogo: (data as { brand?: { brandLogo?: string } }).brand?.brandLogo ?? null,
     players: (data.players ?? []).map(mapPlayer),
     schedule: (data.schedule?.games ?? []).map(mapScheduleGame)
   };

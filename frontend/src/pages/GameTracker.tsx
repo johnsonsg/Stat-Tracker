@@ -35,6 +35,7 @@ export default function GameTracker() {
       roster={teamData.players}
       schedule={teamData.schedule}
       teamName={teamData.teamName}
+      brandLogo={teamData.brandLogo ?? null}
       onSelectGame={(id) => {
         navigate(`/games/${id}`);
       }}
