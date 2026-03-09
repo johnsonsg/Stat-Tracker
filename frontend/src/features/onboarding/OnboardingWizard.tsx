@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Box,
@@ -35,7 +35,12 @@ export default function OnboardingWizard({
   const [activeStep, setActiveStep] = useState(0);
   const [teamName, setTeamName] = useState(teamData.teamName ?? "");
   const [playerForm, setPlayerForm] = useState({ name: "", number: "", position: "" });
-  const [scheduleForm, setScheduleForm] = useState({ opponent: "", dateTime: "", location: "" });
+  const [scheduleForm, setScheduleForm] = useState({
+    opponent: "",
+    dateTime: "",
+    location: "",
+    opponentLogo: ""
+  });
   const [error, setError] = useState<string | null>(null);
   const [isSavingTeam, setIsSavingTeam] = useState(false);
   const [isAddingPlayer, setIsAddingPlayer] = useState(false);
@@ -47,10 +52,17 @@ export default function OnboardingWizard({
   const [savingScheduleId, setSavingScheduleId] = useState<string | null>(null);
   const [removingScheduleId, setRemovingScheduleId] = useState<string | null>(null);
   const [isAddingSchedule, setIsAddingSchedule] = useState(false);
+  const [isUploadingScheduleLogo, setIsUploadingScheduleLogo] = useState(false);
+  const [isUploadingEditLogo, setIsUploadingEditLogo] = useState(false);
+  const [scheduleLogoPreview, setScheduleLogoPreview] = useState<string | null>(null);
+  const [editLogoPreview, setEditLogoPreview] = useState<string | null>(null);
+  const scheduleLogoInputRef = useRef<HTMLInputElement | null>(null);
+  const editLogoInputRef = useRef<HTMLInputElement | null>(null);
   const [editingScheduleForm, setEditingScheduleForm] = useState({
     opponent: "",
     dateTime: "",
-    location: ""
+    location: "",
+    opponentLogo: ""
   });
 
   const [localTeamData, setLocalTeamData] = useState(teamData);
@@ -90,6 +102,121 @@ export default function OnboardingWizard({
   }, [activeStep, teamName]);
 
   const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
+  const teamAppBase = (import.meta.env.VITE_TEAM_APP_BASE_URL ?? "http://localhost:3000").replace(
+    /\/+$/,
+    ""
+  );
+  const isObjectId = (value: string) => /^[a-f\d]{24}$/i.test(value);
+  const normalizeMediaUrl = (value: string) => {
+    if (value.startsWith("http") || value.startsWith("data:")) {
+      return value;
+    }
+    if (value.startsWith("//")) {
+      return `https:${value}`;
+    }
+    if (value.startsWith("/")) {
+      return `${teamAppBase}${value}`;
+    }
+    return `${teamAppBase}/${value}`;
+  };
+
+  const uploadOpponentLogo = async (file: File, label: string) => {
+    const token = await getToken();
+    if (!token) {
+      throw new Error("Missing session token");
+    }
+    const formData = new FormData();
+    formData.append("file", file);
+    if (label.trim()) {
+      formData.append("alt", label.trim());
+    }
+    const response = await fetch(`${teamAppBase}/team-admin/api/media`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`
+      },
+      body: formData
+    });
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(message || "Failed to upload opponent logo");
+    }
+    const data = (await response.json()) as { media?: { id?: string } };
+    if (!data.media?.id) {
+      throw new Error("Upload response missing media id");
+    }
+    return data.media.id;
+  };
+
+  useEffect(() => {
+    let isMounted = true;
+    const resolvePreview = async (value: string, setter: (url: string | null) => void) => {
+      if (!value) {
+        setter(null);
+        return;
+      }
+      if (!isObjectId(value)) {
+        setter(normalizeMediaUrl(value));
+        return;
+      }
+      try {
+        const response = await fetch(`${teamAppBase}/api/media/${encodeURIComponent(value)}`);
+        if (!response.ok) {
+          setter(null);
+          return;
+        }
+        const data = (await response.json()) as { url?: string; media?: { url?: string } };
+        const rawUrl = data.url ?? data.media?.url;
+        setter(rawUrl ? normalizeMediaUrl(rawUrl) : null);
+      } catch {
+        setter(null);
+      }
+    };
+
+    void resolvePreview(scheduleForm.opponentLogo, (url) => {
+      if (isMounted) {
+        setScheduleLogoPreview(url);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [scheduleForm.opponentLogo, teamAppBase]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const resolvePreview = async (value: string, setter: (url: string | null) => void) => {
+      if (!value) {
+        setter(null);
+        return;
+      }
+      if (!isObjectId(value)) {
+        setter(normalizeMediaUrl(value));
+        return;
+      }
+      try {
+        const response = await fetch(`${teamAppBase}/api/media/${encodeURIComponent(value)}`);
+        if (!response.ok) {
+          setter(null);
+          return;
+        }
+        const data = (await response.json()) as { url?: string; media?: { url?: string } };
+        const rawUrl = data.url ?? data.media?.url;
+        setter(rawUrl ? normalizeMediaUrl(rawUrl) : null);
+      } catch {
+        setter(null);
+      }
+    };
+
+    void resolvePreview(editingScheduleForm.opponentLogo, (url) => {
+      if (isMounted) {
+        setEditLogoPreview(url);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [editingScheduleForm.opponentLogo, teamAppBase]);
 
   const saveTeamName = async () => {
     setError(null);
@@ -272,7 +399,11 @@ export default function OnboardingWizard({
       return;
     }
     const tempId = crypto.randomUUID();
-    const optimisticGame: TeamScheduleGame = { id: tempId, ...scheduleForm };
+    const optimisticGame: TeamScheduleGame = {
+      id: tempId,
+      ...scheduleForm,
+      opponentLogo: scheduleForm.opponentLogo.trim() || null
+    };
     updateTeamData((prev) => ({ ...prev, schedule: [...prev.schedule, optimisticGame] }));
     setIsAddingSchedule(true);
     try {
@@ -286,7 +417,10 @@ export default function OnboardingWizard({
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify(scheduleForm)
+        body: JSON.stringify({
+          ...scheduleForm,
+          opponentLogo: scheduleForm.opponentLogo.trim() || undefined
+        })
       });
       if (!response.ok) {
         const message = await response.text();
@@ -297,7 +431,7 @@ export default function OnboardingWizard({
         ...prev,
         schedule: prev.schedule.map((item) => (item.id === tempId ? scheduleGame : item))
       }));
-      setScheduleForm({ opponent: "", dateTime: "", location: "" });
+      setScheduleForm({ opponent: "", dateTime: "", location: "", opponentLogo: "" });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to add schedule game";
       setError(message);
@@ -315,7 +449,8 @@ export default function OnboardingWizard({
     setEditingScheduleForm({
       opponent: game.opponent,
       dateTime: game.dateTime,
-      location: game.location
+      location: game.location,
+      opponentLogo: game.opponentLogo ?? ""
     });
   };
 
@@ -345,7 +480,10 @@ export default function OnboardingWizard({
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify(editingScheduleForm)
+        body: JSON.stringify({
+          ...editingScheduleForm,
+          opponentLogo: editingScheduleForm.opponentLogo.trim() || undefined
+        })
       });
       if (!response.ok) {
         const message = await response.text();
@@ -559,6 +697,57 @@ export default function OnboardingWizard({
               setScheduleForm((prev) => ({ ...prev, opponent: event.target.value }))
             }
           />
+          <Stack spacing={1} sx={{ minWidth: 220 }}>
+            <input
+              ref={scheduleLogoInputRef}
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={async (event) => {
+                const file = event.target.files?.[0];
+                if (!file) {
+                  return;
+                }
+                setError(null);
+                setIsUploadingScheduleLogo(true);
+                try {
+                  const id = await uploadOpponentLogo(file, scheduleForm.opponent);
+                  setScheduleForm((prev) => ({ ...prev, opponentLogo: id }));
+                } catch (err) {
+                  const message = err instanceof Error ? err.message : "Failed to upload logo";
+                  setError(message);
+                } finally {
+                  setIsUploadingScheduleLogo(false);
+                  if (scheduleLogoInputRef.current) {
+                    scheduleLogoInputRef.current.value = "";
+                  }
+                }
+              }}
+            />
+            <Button
+              variant="outlined"
+              onClick={() => scheduleLogoInputRef.current?.click()}
+              disabled={isUploadingScheduleLogo}
+            >
+              {isUploadingScheduleLogo ? "Uploading..." : "Upload logo"}
+            </Button>
+            {scheduleLogoPreview && (
+              <Box
+                component="img"
+                src={scheduleLogoPreview}
+                alt="Opponent logo preview"
+                sx={{ width: 40, height: 40, borderRadius: "50%", objectFit: "cover" }}
+              />
+            )}
+            {scheduleForm.opponentLogo && (
+              <Button
+                size="small"
+                onClick={() => setScheduleForm((prev) => ({ ...prev, opponentLogo: "" }))}
+              >
+                Remove logo
+              </Button>
+            )}
+          </Stack>
           <TextField
             label="Date & time"
             type="datetime-local"
@@ -598,6 +787,60 @@ export default function OnboardingWizard({
                         setEditingScheduleForm((prev) => ({ ...prev, opponent: event.target.value }))
                       }
                     />
+                    <Stack spacing={1} sx={{ minWidth: 200 }}>
+                      <input
+                        ref={editLogoInputRef}
+                        type="file"
+                        accept="image/*"
+                        hidden
+                        onChange={async (event) => {
+                          const file = event.target.files?.[0];
+                          if (!file) {
+                            return;
+                          }
+                          setError(null);
+                          setIsUploadingEditLogo(true);
+                          try {
+                            const id = await uploadOpponentLogo(file, editingScheduleForm.opponent);
+                            setEditingScheduleForm((prev) => ({ ...prev, opponentLogo: id }));
+                          } catch (err) {
+                            const message = err instanceof Error ? err.message : "Failed to upload logo";
+                            setError(message);
+                          } finally {
+                            setIsUploadingEditLogo(false);
+                            if (editLogoInputRef.current) {
+                              editLogoInputRef.current.value = "";
+                            }
+                          }
+                        }}
+                      />
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        onClick={() => editLogoInputRef.current?.click()}
+                        disabled={isUploadingEditLogo}
+                      >
+                        {isUploadingEditLogo ? "Uploading..." : "Upload logo"}
+                      </Button>
+                      {editLogoPreview && (
+                        <Box
+                          component="img"
+                          src={editLogoPreview}
+                          alt="Opponent logo preview"
+                          sx={{ width: 36, height: 36, borderRadius: "50%", objectFit: "cover" }}
+                        />
+                      )}
+                      {editingScheduleForm.opponentLogo && (
+                        <Button
+                          size="small"
+                          onClick={() =>
+                            setEditingScheduleForm((prev) => ({ ...prev, opponentLogo: "" }))
+                          }
+                        >
+                          Remove logo
+                        </Button>
+                      )}
+                    </Stack>
                     <TextField
                       label="Date & time"
                       type="datetime-local"

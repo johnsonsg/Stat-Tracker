@@ -25,7 +25,8 @@ const mapScheduleGame = (game: TenantScheduleGame) => ({
   id: game.id,
   opponent: game.opponent,
   dateTime: game.dateTime,
-  location: game.location
+  location: game.location,
+  opponentLogo: game.opponentLogo ?? null
 });
 
 const buildTenantPlayer = (input: CreatePlayerInput) => {
@@ -60,6 +61,7 @@ const buildTenantScheduleGame = (input: CreateScheduleInput) => ({
   opponent: input.opponent,
   dateTime: input.dateTime,
   location: input.location,
+  opponentLogo: input.opponentLogo ? input.opponentLogo : null,
   outcome: "",
   result: "",
   status: "scheduled"
@@ -194,7 +196,10 @@ export async function updateScheduleGame(
       $set: {
         "schedule.games.$.opponent": input.opponent,
         "schedule.games.$.dateTime": input.dateTime,
-        "schedule.games.$.location": input.location
+        "schedule.games.$.location": input.location,
+        ...(typeof input.opponentLogo === "string"
+          ? { "schedule.games.$.opponentLogo": input.opponentLogo || null }
+          : {})
       }
     }
   );

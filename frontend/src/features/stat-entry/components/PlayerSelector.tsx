@@ -44,7 +44,12 @@ export default function PlayerSelector({ title, players, selected, onSelect }: P
             >
               <ButtonBase
                 onClick={() => onSelect(player)}
-                sx={{ display: "flex", flexDirection: "column", p: 2, width: "100%" }}
+                sx={{
+                  display: "flex",
+                  flexDirection: "column",
+                  p: { xs: 1.25, sm: 2 },
+                  width: "100%"
+                }}
               >
                 <Typography variant="h6" sx={{ fontWeight: 700 }}>
                   #{player.number}

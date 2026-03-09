@@ -13,7 +13,8 @@ export const playerSchema = z.object({
 export const scheduleSchema = z.object({
   opponent: z.string().min(1),
   dateTime: z.string().min(1),
-  location: z.string().min(1)
+  location: z.string().min(1),
+  opponentLogo: z.string().optional()
 });
 
 export type TeamDataInput = z.infer<typeof teamDataSchema>;

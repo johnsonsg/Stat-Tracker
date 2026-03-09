@@ -20,7 +20,12 @@ export default function PlayTypeSelector({ selected, onSelect }: PlayTypeSelecto
             variant={selected === type ? "contained" : "outlined"}
             color="primary"
             onClick={() => onSelect(type)}
-            sx={{ borderRadius: 999, px: 2.5 }}
+            sx={{
+              borderRadius: 999,
+              px: { xs: 1.5, sm: 2.5 },
+              py: { xs: 0.5, sm: 0.75 },
+              fontSize: { xs: "0.75rem", sm: "0.875rem" }
+            }}
           >
             {type}
           </Button>

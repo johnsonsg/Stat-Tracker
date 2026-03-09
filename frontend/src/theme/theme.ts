@@ -1,6 +1,12 @@
 import { createTheme } from "@mui/material/styles";
 
+const typography = {
+  fontFamily:
+    "'Geist','Geist Fallback',ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"
+};
+
 export const lightTheme = createTheme({
+  typography,
   palette: {
     mode: "light",
     primary: {
@@ -17,6 +23,7 @@ export const lightTheme = createTheme({
 });
 
 export const darkTheme = createTheme({
+  typography,
   palette: {
     mode: "dark",
     primary: {

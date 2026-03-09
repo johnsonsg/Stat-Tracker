@@ -11,6 +11,7 @@ export type TeamScheduleGame = {
   opponent: string;
   dateTime: string;
   location: string;
+  opponentLogo?: string | null;
 };
 
 export type TeamData = {

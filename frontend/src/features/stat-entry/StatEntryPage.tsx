@@ -11,6 +11,7 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  Drawer,
   FormControl,
   FormControlLabel,
   IconButton,
@@ -26,11 +27,12 @@ import {
   Tabs,
   TextField,
   Tooltip,
-  Typography
+  Typography,
+  useMediaQuery,
+  useTheme
 } from "@mui/material";
 import { useAuth } from "@clerk/clerk-react";
 import { ChevronDown, Keyboard } from "lucide-react";
-import GameBar from "./components/GameBar";
 import PlayTypeSelector from "./components/PlayTypeSelector";
 import PlayerSelector from "./components/PlayerSelector";
 import ResultSelector from "./components/ResultSelector";
@@ -91,6 +93,7 @@ type SnackbarState = {
 type PendingPlay = {
   label: string;
   playType: string;
+  basePlayType: string;
   yards: number;
   touchdown?: boolean;
   turnover?: boolean;
@@ -146,6 +149,8 @@ export default function StatEntryPage({
   const positionGroupStorageKey = "stat-tracker:stat-entry-position-group";
   const accordionStorage = useMemo(() => getSessionStorage(), []);
   const { getToken } = useAuth();
+  const theme = useTheme();
+  const isPhone = useMediaQuery(theme.breakpoints.down("sm"));
   const [playType, setPlayType] = useState<string | undefined>();
   const [primaryPlayer, setPrimaryPlayer] = useState<TeamPlayer | null>(null);
   const [secondaryPlayer, setSecondaryPlayer] = useState<TeamPlayer | null>(null);
@@ -203,6 +208,9 @@ export default function StatEntryPage({
   const [score, setScore] = useState({ home: 0, away: 0 });
   const [isScoreUpdating, setIsScoreUpdating] = useState(false);
   const [teamLogoUrl, setTeamLogoUrl] = useState<string | null>(null);
+  const [opponentLogoUrl, setOpponentLogoUrl] = useState<string | null>(null);
+  const [scheduleLogoMap, setScheduleLogoMap] = useState<Record<string, string>>({});
+  const [isRightPanelOpen, setIsRightPanelOpen] = useState(false);
   const [positionGroupTab, setPositionGroupTab] = useState(() => {
     const stored = accordionStorage.getItem(positionGroupStorageKey);
     if (stored === "offense" || stored === "defense" || stored === "special" || stored === "all") {
@@ -361,81 +369,78 @@ export default function StatEntryPage({
     accordionStorage.setItem(positionGroupStorageKey, positionGroupTab);
   }, [accordionStorage, positionGroupTab]);
 
+  const teamAppBase = useMemo(
+    () => (import.meta.env.VITE_TEAM_APP_BASE_URL ?? "http://localhost:3000").replace(/\/+$/, ""),
+    []
+  );
   const isObjectId = (value: string) => /^[a-f\d]{24}$/i.test(value);
+  const resolveMediaUrl = useCallback(
+    async (value: string | null) => {
+      if (!value) {
+        return null;
+      }
+      if (value.startsWith("http") || value.startsWith("data:")) {
+        return value;
+      }
+      if (value.startsWith("//")) {
+        return `https:${value}`;
+      }
+      if (!isObjectId(value)) {
+        return value.startsWith("/") ? `${teamAppBase}${value}` : `${teamAppBase}/${value}`;
+      }
+
+      const encodedId = encodeURIComponent(value);
+      const candidates = [
+        `${teamAppBase}/api/media/${encodedId}`,
+        `${teamAppBase}/api/media?id=${encodedId}`,
+        `${teamAppBase}/api/media?mediaId=${encodedId}`
+      ];
+
+      for (const url of candidates) {
+        const response = await fetch(url);
+        if (!response.ok) {
+          let errorText = "";
+          try {
+            errorText = await response.text();
+          } catch {
+            errorText = "";
+          }
+          if (response.status === 400 && errorText.includes("Missing media id")) {
+            continue;
+          }
+          continue;
+        }
+
+        const data = (await response.json()) as {
+          url?: string;
+          doc?: { url?: string };
+          data?: { url?: string };
+          media?: { url?: string };
+        };
+        const rawUrl = data.url ?? data.doc?.url ?? data.data?.url ?? data.media?.url;
+        if (!rawUrl) {
+          return null;
+        }
+        if (rawUrl.startsWith("http") || rawUrl.startsWith("data:")) {
+          return rawUrl;
+        }
+        if (rawUrl.startsWith("//")) {
+          return `https:${rawUrl}`;
+        }
+        return rawUrl.startsWith("/") ? `${teamAppBase}${rawUrl}` : `${teamAppBase}/${rawUrl}`;
+      }
+
+      return null;
+    },
+    [teamAppBase]
+  );
 
   useEffect(() => {
     let isMounted = true;
     const resolveLogo = async () => {
-      if (!brandLogo) {
-        setTeamLogoUrl(null);
-        return;
-      }
-      if (brandLogo.startsWith("http")) {
-        setTeamLogoUrl(brandLogo);
-        return;
-      }
-      if (!isObjectId(brandLogo)) {
-        setTeamLogoUrl(null);
-        return;
-      }
-
-      const teamAppBase = (import.meta.env.VITE_TEAM_APP_BASE_URL ?? "http://localhost:3000").replace(
-        /\/+$/,
-        ""
-      );
-
-      try {
-        const encodedId = encodeURIComponent(brandLogo);
-        const candidates = [
-          `${teamAppBase}/api/media/${encodedId}`,
-          `${teamAppBase}/api/media?id=${encodedId}`,
-          `${teamAppBase}/api/media?mediaId=${encodedId}`
-        ];
-
-        for (const url of candidates) {
-          const response = await fetch(url);
-          if (!response.ok) {
-            let errorText = "";
-            try {
-              errorText = await response.text();
-            } catch {
-              errorText = "";
-            }
-            if (response.status === 400 && errorText.includes("Missing media id")) {
-              continue;
-            }
-            continue;
-          }
-
-          const data = (await response.json()) as {
-            url?: string;
-            doc?: { url?: string };
-            data?: { url?: string };
-            media?: { url?: string };
-          };
-          const rawUrl = data.url ?? data.doc?.url ?? data.data?.url ?? data.media?.url;
-          const resolvedUrl = rawUrl
-            ? rawUrl.startsWith("http")
-              ? rawUrl
-              : rawUrl.startsWith("//")
-              ? `https:${rawUrl}`
-              : rawUrl.startsWith("/")
-              ? `${teamAppBase}${rawUrl}`
-              : `${teamAppBase}/${rawUrl}`
-            : null;
-          if (isMounted) {
-            setTeamLogoUrl(resolvedUrl);
-          }
-          return;
-        }
-
-        if (isMounted) {
-          setTeamLogoUrl(null);
-        }
-      } catch {
-        if (isMounted) {
-          setTeamLogoUrl(null);
-        }
+      const resolved = await resolveMediaUrl(brandLogo ?? null);
+      if (isMounted) {
+        setTeamLogoUrl(resolved);
       }
     };
 
@@ -443,7 +448,7 @@ export default function StatEntryPage({
     return () => {
       isMounted = false;
     };
-  }, [brandLogo]);
+  }, [brandLogo, resolveMediaUrl]);
   const playTypeOptions = [
     "pass",
     "incomplete",
@@ -578,6 +583,80 @@ export default function StatEntryPage({
     return match?.opponent ?? null;
   }, [schedule, scheduleMatches, selectedGame]);
 
+  const scheduleOpponentLogo = useMemo(() => {
+    if (!selectedGame) {
+      return null;
+    }
+    const match = schedule.find((item) => scheduleMatches.get(item.id)?._id === selectedGame._id);
+    return match?.opponentLogo ?? null;
+  }, [schedule, scheduleMatches, selectedGame]);
+
+  const scheduleLogoValues = useMemo(() => {
+    return Array.from(
+      new Set(
+        schedule
+          .map((item) => item.opponentLogo ?? "")
+          .filter((value) => value)
+      )
+    );
+  }, [schedule]);
+
+  const missingScheduleLogos = useMemo(
+    () => scheduleLogoValues.filter((value) => !scheduleLogoMap[value]),
+    [scheduleLogoMap, scheduleLogoValues]
+  );
+
+  useEffect(() => {
+    if (missingScheduleLogos.length === 0) {
+      return;
+    }
+
+    let isMounted = true;
+    const loadLogos = async () => {
+      const entries = await Promise.all(
+        missingScheduleLogos.map(async (value) => {
+          const url = await resolveMediaUrl(value);
+          return url ? { value, url } : null;
+        })
+      );
+
+      if (!isMounted) {
+        return;
+      }
+
+      const next: Record<string, string> = {};
+      entries.forEach((entry) => {
+        if (entry) {
+          next[entry.value] = entry.url;
+        }
+      });
+
+      if (Object.keys(next).length > 0) {
+        setScheduleLogoMap((prev) => ({ ...prev, ...next }));
+      }
+    };
+
+    void loadLogos();
+    return () => {
+      isMounted = false;
+    };
+  }, [missingScheduleLogos, resolveMediaUrl]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const resolveLogo = async () => {
+      const resolved = await resolveMediaUrl(scheduleOpponentLogo ?? null);
+      if (isMounted) {
+        setOpponentLogoUrl(resolved);
+      }
+    };
+
+    void resolveLogo();
+    return () => {
+      isMounted = false;
+    };
+  }, [resolveMediaUrl, scheduleOpponentLogo]);
+
   const teamSide = resolveTeamSide(selectedGame);
   const opponentName =
     scheduleOpponent ??
@@ -591,6 +670,28 @@ export default function StatEntryPage({
       : selectedGame?.awayTeam ?? "Away");
   const teamScore = teamSide === "home" ? score.home : score.away;
   const opponentScore = teamSide === "home" ? score.away : score.home;
+
+  const renderScheduleLabel = useCallback(
+    (item: TeamScheduleGame, label: string) => {
+      const logoValue = item.opponentLogo ?? "";
+      const logoUrl = logoValue ? scheduleLogoMap[logoValue] : null;
+      if (!logoUrl) {
+        return label;
+      }
+      return (
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <Box
+            component="img"
+            src={logoUrl}
+            alt={item.opponent}
+            sx={{ width: 20, height: 20, borderRadius: "50%", objectFit: "cover" }}
+          />
+          <Box component="span">{label}</Box>
+        </Box>
+      );
+    },
+    [scheduleLogoMap]
+  );
 
   const shouldIgnoreHotkey = (event?: KeyboardEvent) => {
     const target = event?.target as HTMLElement | null;
@@ -840,6 +941,17 @@ export default function StatEntryPage({
       selectedGame,
       showSnackbar
     ]
+  );
+
+  const schedulePendingFinalize = useCallback(
+    (nextPending: PendingPlay, delayMs = 3000) => {
+      setPendingPlay(nextPending);
+      clearPendingTimer();
+      pendingTimerRef.current = window.setTimeout(() => {
+        void finalizePendingPlay(nextPending);
+      }, delayMs);
+    },
+    [clearPendingTimer, finalizePendingPlay]
   );
 
   const handleUndoPending = useCallback(() => {
@@ -1472,6 +1584,7 @@ export default function StatEntryPage({
     const touchdown = result === "TD";
     const turnover = result === "INT" || result === "FUMBLE";
     const isIncomplete = result === "INC";
+    const basePlayType = playType.toLowerCase();
 
     const note = touchdown
       ? "Touchdown"
@@ -1504,7 +1617,7 @@ export default function StatEntryPage({
       down: gameState.down,
       distance: gameState.distance,
       yardLine: gameState.yardLine,
-      playType: (isIncomplete ? "incomplete" : playType.toLowerCase()),
+      playType: (isIncomplete ? "incomplete" : basePlayType),
       players: Object.keys(playersPayload).length ? playersPayload : undefined,
       yards: isIncomplete ? 0 : yards,
       touchdown: isIncomplete ? false : touchdown,
@@ -1516,6 +1629,7 @@ export default function StatEntryPage({
     const nextPending: PendingPlay = {
       label,
       playType: payload.playType,
+      basePlayType,
       players: payload.players,
       yards,
       touchdown,
@@ -1524,18 +1638,12 @@ export default function StatEntryPage({
       payload
     };
 
-    setPendingPlay(nextPending);
-    clearPendingTimer();
-    pendingTimerRef.current = window.setTimeout(() => {
-      void finalizePendingPlay(nextPending);
-    }, 3000);
+    schedulePendingFinalize(nextPending);
     setSecondaryPlayer(null);
     setIsSaving(false);
   }, [
     activeGameId,
     buildPlayLabel,
-    clearPendingTimer,
-    finalizePendingPlay,
     gameState.clock,
     gameState.distance,
     gameState.down,
@@ -1544,9 +1652,108 @@ export default function StatEntryPage({
     pendingPlay,
     playType,
     primaryPlayer,
+    schedulePendingFinalize,
     secondaryPlayer,
     showSnackbar
   ]);
+
+  const pendingFlags = useMemo(() => {
+    if (!pendingPlay) {
+      return { isIncomplete: false, isTouchdown: false, isInterception: false, isFumble: false };
+    }
+    const note = pendingPlay.notes?.toLowerCase() ?? "";
+    return {
+      isIncomplete: pendingPlay.playType === "incomplete" || note === "incomplete",
+      isTouchdown: note === "touchdown" || Boolean(pendingPlay.touchdown),
+      isInterception: note === "int",
+      isFumble: note === "fumble"
+    };
+  }, [pendingPlay]);
+
+  const togglePendingFlag = useCallback(
+    (flag: "TD" | "INT" | "FUMBLE" | "INC") => {
+      if (!pendingPlay) {
+        return;
+      }
+
+      if (flag === "INC" && pendingPlay.basePlayType !== "pass") {
+        showSnackbar("Incomplete is only for pass plays.", "error");
+        return;
+      }
+
+      let { touchdown, turnover } = pendingPlay;
+      let notes = pendingPlay.notes;
+      let playType = pendingPlay.playType;
+      let yards = pendingPlay.yards;
+
+      const isInc = playType === "incomplete" || notes?.toLowerCase() === "incomplete";
+
+      if (flag === "INC") {
+        if (isInc) {
+          playType = pendingPlay.basePlayType;
+          notes = undefined;
+        } else {
+          playType = "incomplete";
+          yards = 0;
+          touchdown = false;
+          turnover = false;
+          notes = "Incomplete";
+        }
+      } else {
+        if (isInc) {
+          playType = pendingPlay.basePlayType;
+          notes = undefined;
+        }
+
+        if (flag === "TD") {
+          const next = !touchdown;
+          touchdown = next;
+          if (next) {
+            turnover = false;
+            notes = "Touchdown";
+          } else if (notes === "Touchdown") {
+            notes = undefined;
+          }
+        }
+
+        if (flag === "INT" || flag === "FUMBLE") {
+          const nextLabel = flag === "INT" ? "INT" : "Fumble";
+          const isSame = turnover && notes === nextLabel;
+          if (isSame) {
+            turnover = false;
+            notes = undefined;
+          } else {
+            turnover = true;
+            touchdown = false;
+            notes = nextLabel;
+          }
+        }
+      }
+
+      const payload = {
+        ...pendingPlay.payload,
+        playType,
+        yards: playType === "incomplete" ? 0 : yards,
+        touchdown: playType === "incomplete" ? false : Boolean(touchdown),
+        turnover: playType === "incomplete" ? false : Boolean(turnover),
+        notes
+      };
+      const label = buildPlayLabel({ playType: payload.playType, players: payload.players });
+      const nextPending: PendingPlay = {
+        ...pendingPlay,
+        label,
+        playType: payload.playType,
+        yards: payload.yards ?? 0,
+        touchdown: payload.touchdown,
+        turnover: payload.turnover,
+        notes,
+        payload
+      };
+
+      schedulePendingFinalize(nextPending);
+    },
+    [buildPlayLabel, pendingPlay, schedulePendingFinalize, showSnackbar]
+  );
 
   const selectPlayType = useCallback(
     (nextType: string) => {
@@ -1560,7 +1767,13 @@ export default function StatEntryPage({
 
   const triggerResult = useCallback(
     (result: string) => {
-      if (isEditingDialogOpen || pendingPlay) {
+      if (isEditingDialogOpen) {
+        return;
+      }
+      if (pendingPlay) {
+        if (["TD", "INT", "FUMBLE", "INC"].includes(result)) {
+          togglePendingFlag(result as "TD" | "INT" | "FUMBLE" | "INC");
+        }
         return;
       }
       if (!playType || !primaryPlayer) {
@@ -1569,7 +1782,15 @@ export default function StatEntryPage({
       }
       void handleSave(result);
     },
-    [handleSave, isEditingDialogOpen, pendingPlay, playType, primaryPlayer, showSnackbar]
+    [
+      handleSave,
+      isEditingDialogOpen,
+      pendingPlay,
+      playType,
+      primaryPlayer,
+      showSnackbar,
+      togglePendingFlag
+    ]
   );
 
   const confirmPendingPlay = useCallback(() => {
@@ -1776,14 +1997,138 @@ export default function StatEntryPage({
     }
   });
 
+  const rightPanelContent = (
+    <>
+      <Paper elevation={1} sx={{ p: { xs: 1.5, sm: 2 } }}>
+        <Stack spacing={{ xs: 1.5, sm: 2 }}>
+          <Typography variant="subtitle2" color="text.secondary">
+            Active game
+          </Typography>
+          <FormControl fullWidth size="small">
+            <InputLabel id="game-select-label">Game</InputLabel>
+            <Select
+              labelId="game-select-label"
+              label="Game"
+              value={selectedGameId}
+              onChange={(event) => {
+                const nextId = event.target.value;
+                if (typeof nextId !== "string") {
+                  return;
+                }
+                if (nextId.startsWith("schedule:")) {
+                  const scheduleId = nextId.replace("schedule:", "");
+                  const match = schedule.find((item) => item.id === scheduleId);
+                  if (match) {
+                    void createGameFromSchedule(match);
+                  }
+                  return;
+                }
+
+                setSelectedGameId(nextId);
+                if (nextId && onSelectGame) {
+                  onSelectGame(nextId);
+                }
+              }}
+            >
+              {gamesLoading && (
+                <MenuItem value="" disabled>
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                    <CircularProgress size={16} />
+                    Loading games...
+                  </Box>
+                </MenuItem>
+              )}
+              {!gamesLoading && games.length === 0 && schedule.length === 0 && (
+                <MenuItem value="" disabled>
+                  No games available
+                </MenuItem>
+              )}
+              {sortedSchedule.map((item) => {
+                const match = scheduleMatches.get(item.id);
+                const label = `vs ${item.opponent} · ${formatScheduleDate(item.dateTime)} · ${formatLocationLabel(item.location)}`;
+                if (match) {
+                  const statusLabel =
+                    match.status === "live"
+                      ? "Live"
+                      : match.status === "finished"
+                      ? "Final"
+                      : "Scheduled";
+                  return (
+                    <MenuItem key={`schedule-${item.id}`} value={match._id}>
+                      {renderScheduleLabel(item, `${statusLabel}: ${label}`)}
+                    </MenuItem>
+                  );
+                }
+                return (
+                  <MenuItem key={`schedule-${item.id}`} value={`schedule:${item.id}`}>
+                    {renderScheduleLabel(item, `Scheduled: ${label}`)}
+                  </MenuItem>
+                );
+              })}
+              {games
+                .filter((game) => !matchedGameIds.has(game._id))
+                .map((game) => (
+                  <MenuItem key={game._id} value={game._id}>
+                    {game.homeTeam} vs {game.awayTeam} · {new Date(game.gameDate).toLocaleDateString()} · {game.status}
+                  </MenuItem>
+                ))}
+            </Select>
+          </FormControl>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+            {schedule.length === 0 && (
+              <Button
+                variant="contained"
+                onClick={() => {
+                  setCreateErrors({});
+                  setIsCreateOpen(true);
+                }}
+                sx={{ alignSelf: "flex-start" }}
+              >
+                Create Game
+              </Button>
+            )}
+            {selectedGame?.status === "scheduled" && (
+              <Button
+                variant="outlined"
+                onClick={handleStartGame}
+                disabled={isStatusUpdating || isScheduleCreating}
+              >
+                {isStatusUpdating ? "Starting..." : "Start Game"}
+              </Button>
+            )}
+            {selectedGame?.status === "live" && (
+              <Button
+                variant="outlined"
+                color="error"
+                onClick={handleEndGame}
+                disabled={isStatusUpdating || isScheduleCreating}
+              >
+                {isStatusUpdating ? "Ending..." : "End Game"}
+              </Button>
+            )}
+          </Stack>
+        </Stack>
+      </Paper>
+      <PlayTimeline
+        plays={plays}
+        selectedId={selectedPlay?.id ?? null}
+        onSelect={handleSelectPlay}
+      />
+    </>
+  );
+
   return (
     <Box
       ref={statEntryRef}
-      sx={{ display: "grid", gap: 3, gridTemplateColumns: { xs: "1fr", lg: "3fr 1fr" } }}
+      sx={{
+        display: "grid",
+        gap: { xs: 2, md: 3 },
+        gridTemplateColumns: { xs: "1fr", lg: "3fr 1fr" },
+        overflowX: "hidden"
+      }}
     >
-      <Stack spacing={3}>
+      <Stack spacing={{ xs: 2, md: 3 }}>
         {error && <Alert severity="error">{error}</Alert>}
-        <GameBar {...gameState} />
         <Accordion
           expanded={accordionState.scoreboard}
           onChange={handleAccordionChange("scoreboard")}
@@ -1799,9 +2144,11 @@ export default function StatEntryPage({
               teamLabel={teamLabel}
               teamLogoUrl={teamLogoUrl}
               opponentName={opponentName}
+              opponentLogoUrl={opponentLogoUrl}
               teamScore={teamScore}
               opponentScore={opponentScore}
               teamSide={teamSide}
+              gameState={gameState}
               onAdjustScore={handleAdjustScore}
               isUpdating={isScoreUpdating}
               isLive={selectedGame?.status === "live"}
@@ -1952,17 +2299,34 @@ export default function StatEntryPage({
 
         <PlayTypeSelector selected={playType} onSelect={setPlayType} />
 
-        <Paper elevation={1} sx={{ p: 1 }}>
+        <Paper elevation={1} sx={{ p: { xs: 0.5, sm: 1 } }}>
           <Tabs
             value={positionGroupTab}
             onChange={(_, value) => setPositionGroupTab(value)}
             variant="scrollable"
             allowScrollButtonsMobile
+            sx={{ minHeight: { xs: 36, sm: 44 } }}
           >
-            <Tab value="all" label={renderTabLabel("All", groupCounts.all)} />
-            <Tab value="offense" label={renderTabLabel("Offense", groupCounts.offense)} />
-            <Tab value="defense" label={renderTabLabel("Defense", groupCounts.defense)} />
-            <Tab value="special" label={renderTabLabel("Special Teams", groupCounts.special)} />
+            <Tab
+              value="all"
+              label={renderTabLabel("All", groupCounts.all)}
+              sx={{ minHeight: { xs: 36, sm: 44 }, py: { xs: 0.5, sm: 1 } }}
+            />
+            <Tab
+              value="offense"
+              label={renderTabLabel("Offense", groupCounts.offense)}
+              sx={{ minHeight: { xs: 36, sm: 44 }, py: { xs: 0.5, sm: 1 } }}
+            />
+            <Tab
+              value="defense"
+              label={renderTabLabel("Defense", groupCounts.defense)}
+              sx={{ minHeight: { xs: 36, sm: 44 }, py: { xs: 0.5, sm: 1 } }}
+            />
+            <Tab
+              value="special"
+              label={renderTabLabel("Special Teams", groupCounts.special)}
+              sx={{ minHeight: { xs: 36, sm: 44 }, py: { xs: 0.5, sm: 1 } }}
+            />
           </Tabs>
         </Paper>
 
@@ -2098,131 +2462,138 @@ export default function StatEntryPage({
 
         <Box
           sx={{
-            opacity: isSaving || pendingPlay ? 0.6 : 1,
-            pointerEvents: isSaving || pendingPlay ? "none" : "auto"
+            display: "grid",
+            gap: { xs: 1.5, sm: 2 },
+            gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" }
           }}
         >
-          <ResultSelector onSelect={handleSave} />
+          <Paper
+            elevation={1}
+            sx={{
+              p: { xs: 1.5, sm: 2 },
+              opacity: isSaving || pendingPlay ? 0.6 : 1,
+              pointerEvents: isSaving || pendingPlay ? "none" : "auto"
+            }}
+          >
+            <ResultSelector onSelect={handleSave} />
+          </Paper>
+          <Paper elevation={1} sx={{ p: { xs: 1.5, sm: 2 } }}>
+            <Stack spacing={{ xs: 1, sm: 1.5 }}>
+              <Typography variant="subtitle2" color="text.secondary">
+                Results
+              </Typography>
+              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                <Button
+                  variant={pendingFlags.isTouchdown ? "contained" : "outlined"}
+                  color={pendingFlags.isTouchdown ? "success" : "inherit"}
+                  onClick={() => togglePendingFlag("TD")}
+                  disabled={!pendingPlay}
+                  sx={{
+                    px: { xs: 1, sm: 1.5 },
+                    py: { xs: 0.5, sm: 0.75 },
+                    fontSize: { xs: "0.75rem", sm: "0.875rem" }
+                  }}
+                >
+                  TD
+                </Button>
+                <Button
+                  variant={pendingFlags.isInterception ? "contained" : "outlined"}
+                  color={pendingFlags.isInterception ? "error" : "inherit"}
+                  onClick={() => togglePendingFlag("INT")}
+                  disabled={!pendingPlay}
+                  sx={{
+                    px: { xs: 1, sm: 1.5 },
+                    py: { xs: 0.5, sm: 0.75 },
+                    fontSize: { xs: "0.75rem", sm: "0.875rem" }
+                  }}
+                >
+                  INT
+                </Button>
+                <Button
+                  variant={pendingFlags.isFumble ? "contained" : "outlined"}
+                  color={pendingFlags.isFumble ? "warning" : "inherit"}
+                  onClick={() => togglePendingFlag("FUMBLE")}
+                  disabled={!pendingPlay}
+                  sx={{
+                    px: { xs: 1, sm: 1.5 },
+                    py: { xs: 0.5, sm: 0.75 },
+                    fontSize: { xs: "0.75rem", sm: "0.875rem" }
+                  }}
+                >
+                  FUMBLE
+                </Button>
+                <Button
+                  variant={pendingFlags.isIncomplete ? "contained" : "outlined"}
+                  color={pendingFlags.isIncomplete ? "info" : "inherit"}
+                  onClick={() => togglePendingFlag("INC")}
+                  disabled={!pendingPlay}
+                  sx={{
+                    px: { xs: 1, sm: 1.5 },
+                    py: { xs: 0.5, sm: 0.75 },
+                    fontSize: { xs: "0.75rem", sm: "0.875rem" }
+                  }}
+                >
+                  INC
+                </Button>
+              </Stack>
+              <Typography variant="caption" color="text.secondary">
+                {pendingPlay
+                  ? "Auto-saves in a moment. Toggle results or press Space to confirm."
+                  : "Pick yards to enable result toggles."}
+              </Typography>
+              <Button
+                variant="text"
+                onClick={confirmPendingPlay}
+                disabled={!pendingPlay}
+                sx={{ alignSelf: "flex-start" }}
+              >
+                Save now
+              </Button>
+            </Stack>
+          </Paper>
         </Box>
       </Stack>
-
-      <Stack spacing={3}>
-        <Paper elevation={1} sx={{ p: 2 }}>
-          <Stack spacing={2}>
-            <Typography variant="subtitle2" color="text.secondary">
-              Active game
-            </Typography>
-            <FormControl fullWidth size="small">
-              <InputLabel id="game-select-label">Game</InputLabel>
-              <Select
-                labelId="game-select-label"
-                label="Game"
-                value={selectedGameId}
-                onChange={(event) => {
-                  const nextId = event.target.value;
-                  if (typeof nextId !== "string") {
-                    return;
-                  }
-                  if (nextId.startsWith("schedule:")) {
-                    const scheduleId = nextId.replace("schedule:", "");
-                    const match = schedule.find((item) => item.id === scheduleId);
-                    if (match) {
-                      void createGameFromSchedule(match);
-                    }
-                    return;
-                  }
-
-                  setSelectedGameId(nextId);
-                  if (nextId && onSelectGame) {
-                    onSelectGame(nextId);
-                  }
-                }}
-              >
-                {gamesLoading && (
-                  <MenuItem value="" disabled>
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                      <CircularProgress size={16} />
-                      Loading games...
-                    </Box>
-                  </MenuItem>
-                )}
-                {!gamesLoading && games.length === 0 && schedule.length === 0 && (
-                  <MenuItem value="" disabled>
-                    No games available
-                  </MenuItem>
-                )}
-                {sortedSchedule.map((item) => {
-                  const match = scheduleMatches.get(item.id);
-                  const label = `vs ${item.opponent} · ${formatScheduleDate(item.dateTime)} · ${formatLocationLabel(item.location)}`;
-                  if (match) {
-                    const statusLabel =
-                      match.status === "live"
-                        ? "Live"
-                        : match.status === "finished"
-                        ? "Final"
-                        : "Scheduled";
-                    return (
-                      <MenuItem key={`schedule-${item.id}`} value={match._id}>
-                        {statusLabel}: {label}
-                      </MenuItem>
-                    );
-                  }
-                  return (
-                    <MenuItem key={`schedule-${item.id}`} value={`schedule:${item.id}`}>
-                      Scheduled: {label}
-                    </MenuItem>
-                  );
-                })}
-                {games
-                  .filter((game) => !matchedGameIds.has(game._id))
-                  .map((game) => (
-                    <MenuItem key={game._id} value={game._id}>
-                      {game.homeTeam} vs {game.awayTeam} · {new Date(game.gameDate).toLocaleDateString()} · {game.status}
-                    </MenuItem>
-                  ))}
-              </Select>
-            </FormControl>
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-              {schedule.length === 0 && (
-                <Button
-                  variant="contained"
-                  onClick={() => {
-                    setCreateErrors({});
-                    setIsCreateOpen(true);
-                  }}
-                  sx={{ alignSelf: "flex-start" }}
-                >
-                  Create Game
-                </Button>
-              )}
-              {selectedGame?.status === "scheduled" && (
-                <Button
-                  variant="outlined"
-                  onClick={handleStartGame}
-                  disabled={isStatusUpdating || isScheduleCreating}
-                >
-                  {isStatusUpdating ? "Starting..." : "Start Game"}
-                </Button>
-              )}
-              {selectedGame?.status === "live" && (
-                <Button
-                  variant="outlined"
-                  color="error"
-                  onClick={handleEndGame}
-                  disabled={isStatusUpdating || isScheduleCreating}
-                >
-                  {isStatusUpdating ? "Ending..." : "End Game"}
-                </Button>
-              )}
+      {isPhone ? (
+        <>
+          <Paper elevation={1} sx={{ p: { xs: 1.5, sm: 2 } }}>
+            <Stack spacing={1}>
+              <Typography variant="subtitle2" color="text.secondary">
+                Game panel
+              </Typography>
+              <Button variant="contained" fullWidth onClick={() => setIsRightPanelOpen(true)}>
+                Open game & timeline
+              </Button>
             </Stack>
-          </Stack>
-        </Paper>
-        <PlayTimeline
-          plays={plays}
-          selectedId={selectedPlay?.id ?? null}
-          onSelect={handleSelectPlay}
-        />
-      </Stack>
+          </Paper>
+          <Drawer
+            anchor="bottom"
+            open={isRightPanelOpen}
+            onClose={() => setIsRightPanelOpen(false)}
+            PaperProps={{
+              sx: {
+                borderTopLeftRadius: 16,
+                borderTopRightRadius: 16
+              }
+            }}
+          >
+            <Box sx={{ p: 2, maxHeight: "85vh", overflowY: "auto" }}>
+              <Stack spacing={2}>
+                <Stack direction="row" alignItems="center" justifyContent="space-between">
+                  <Typography variant="subtitle2" color="text.secondary">
+                    Game & Timeline
+                  </Typography>
+                  <Button size="small" onClick={() => setIsRightPanelOpen(false)}>
+                    Done
+                  </Button>
+                </Stack>
+                {rightPanelContent}
+              </Stack>
+            </Box>
+          </Drawer>
+        </>
+      ) : (
+        <Stack spacing={{ xs: 2, md: 3 }}>{rightPanelContent}</Stack>
+      )}
 
       <Dialog
         open={isCreateOpen}

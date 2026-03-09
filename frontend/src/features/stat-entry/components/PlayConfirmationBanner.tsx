@@ -34,7 +34,7 @@ export default function PlayConfirmationBanner({
     <Box
       sx={{
         position: "fixed",
-        bottom: 16,
+        top: 16,
         left: 16,
         right: 16,
         zIndex: (theme) => theme.zIndex.snackbar
