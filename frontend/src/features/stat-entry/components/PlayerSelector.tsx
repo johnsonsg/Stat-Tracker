@@ -11,10 +11,19 @@ type PlayerSelectorProps = {
   title: string;
   players: Player[];
   selected?: Player | null;
+  secondarySelected?: Player | null;
+  roleLabels?: (player: Player) => string[];
   onSelect: (player: Player) => void;
 };
 
-export default function PlayerSelector({ title, players, selected, onSelect }: PlayerSelectorProps) {
+export default function PlayerSelector({
+  title,
+  players,
+  selected,
+  secondarySelected,
+  roleLabels,
+  onSelect
+}: PlayerSelectorProps) {
   return (
     <Stack spacing={1.5}>
       {title ? (
@@ -30,18 +39,65 @@ export default function PlayerSelector({ title, players, selected, onSelect }: P
         }}
       >
         {players.map((player) => {
-          const isSelected = selected?.id === player.id;
+          const isSelectedPrimary = selected?.id === player.id;
+          const isSelectedSecondary = secondarySelected?.id === player.id;
+          const labels = roleLabels?.(player) ?? [];
           return (
             <Paper
               key={player.id}
-              elevation={isSelected ? 3 : 1}
+              elevation={isSelectedPrimary || isSelectedSecondary ? 3 : 1}
               sx={{
                 border: "1px solid",
-                borderColor: isSelected ? "primary.main" : "divider",
-                bgcolor: isSelected ? "primary.soft" : "background.paper",
-                borderRadius: 2
+                borderColor: isSelectedPrimary
+                  ? "primary.main"
+                  : isSelectedSecondary
+                  ? "primary.main"
+                  : "divider",
+                bgcolor: isSelectedPrimary
+                  ? "primary.soft"
+                  : isSelectedSecondary
+                  ? "primary.main"
+                  : "background.paper",
+                borderRadius: 2,
+                position: "relative"
               }}
             >
+              {isSelectedPrimary && (
+                <Box
+                  sx={{
+                    position: "absolute",
+                    top: 6,
+                    right: 6,
+                    bgcolor: "primary.main",
+                    color: "primary.contrastText",
+                    borderRadius: 999,
+                    px: 0.75,
+                    py: 0.2,
+                    fontSize: "0.65rem",
+                    fontWeight: 700
+                  }}
+                >
+                  P
+                </Box>
+              )}
+              {isSelectedSecondary && (
+                <Box
+                  sx={{
+                    position: "absolute",
+                    top: 6,
+                    right: isSelectedPrimary ? 28 : 6,
+                    bgcolor: "primary.main",
+                    color: "primary.contrastText",
+                    borderRadius: 999,
+                    px: 0.75,
+                    py: 0.2,
+                    fontSize: "0.65rem",
+                    fontWeight: 700
+                  }}
+                >
+                  S
+                </Box>
+              )}
               <ButtonBase
                 onClick={() => onSelect(player)}
                 sx={{
@@ -54,10 +110,29 @@ export default function PlayerSelector({ title, players, selected, onSelect }: P
                 <Typography variant="h6" sx={{ fontWeight: 700 }}>
                   #{player.number}
                 </Typography>
+                {labels.length > 0 && (
+                  <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap", mt: 0.5 }}>
+                    {labels.map((label) => (
+                      <Box
+                        key={`${player.id}-${label}`}
+                        sx={{
+                          px: 0.6,
+                          py: 0.1,
+                          borderRadius: 999,
+                          bgcolor: "action.selected",
+                          fontSize: "0.6rem",
+                          fontWeight: 700
+                        }}
+                      >
+                        {label}
+                      </Box>
+                    ))}
+                  </Box>
+                )}
                 <Typography variant="body2" color="text.secondary">
                   {player.position}
                 </Typography>
-                <Typography variant="caption" color="text.secondary">
+                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
                   {player.name}
                 </Typography>
               </ButtonBase>

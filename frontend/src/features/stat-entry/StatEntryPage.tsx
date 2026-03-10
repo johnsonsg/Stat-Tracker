@@ -26,6 +26,8 @@ import {
   Tab,
   Tabs,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Tooltip,
   Typography,
   useMediaQuery,
@@ -195,8 +197,7 @@ export default function StatEntryPage({
   const [shortcutAnchor, setShortcutAnchor] = useState<HTMLElement | null>(null);
   const [activePlayerField, setActivePlayerField] = useState<"primary" | "secondary">("primary");
   const statEntryRef = useRef<HTMLDivElement | null>(null);
-  const primarySelectorRef = useRef<HTMLDivElement | null>(null);
-  const secondarySelectorRef = useRef<HTMLDivElement | null>(null);
+  const playerGridRef = useRef<HTMLDivElement | null>(null);
   const autoCreateRef = useRef(false);
   const [gameState, setGameState] = useState({
     quarter: 1,
@@ -211,9 +212,18 @@ export default function StatEntryPage({
   const [opponentLogoUrl, setOpponentLogoUrl] = useState<string | null>(null);
   const [scheduleLogoMap, setScheduleLogoMap] = useState<Record<string, string>>({});
   const [isRightPanelOpen, setIsRightPanelOpen] = useState(false);
+  const [rosterBucket, setRosterBucket] = useState<
+    "playmakers" | "secondary" | "starters" | "roster" | "all"
+  >("playmakers");
   const [positionGroupTab, setPositionGroupTab] = useState(() => {
     const stored = accordionStorage.getItem(positionGroupStorageKey);
-    if (stored === "offense" || stored === "defense" || stored === "special" || stored === "all") {
+    if (
+      stored === "offense" ||
+      stored === "defense" ||
+      stored === "special" ||
+      stored === "roster" ||
+      stored === "all"
+    ) {
       return stored;
     }
     return "all";
@@ -244,44 +254,16 @@ export default function StatEntryPage({
     }
   });
   const { primaryIds, secondaryIds, starterIds } = usePlayerFlags();
-
   const rosterById = useMemo(() => new Map(roster.map((player) => [player.id, player])), [roster]);
-  const primaryFlagged = useMemo(
-    () => roster.filter((player) => primaryIds.includes(player.id)),
-    [primaryIds, roster]
-  );
-  const secondaryFlagged = useMemo(
-    () => roster.filter((player) => secondaryIds.includes(player.id)),
-    [secondaryIds, roster]
-  );
-  const starterFlagged = useMemo(
-    () => roster.filter((player) => starterIds.includes(player.id)),
-    [starterIds, roster]
-  );
   const primaryIdSet = useMemo(() => new Set(primaryIds), [primaryIds]);
+  const secondaryIdSet = useMemo(() => new Set(secondaryIds), [secondaryIds]);
   const starterIdSet = useMemo(() => new Set(starterIds), [starterIds]);
-
-  const secondaryOnly = useMemo(
-    () => secondaryFlagged.filter((player) => !primaryIdSet.has(player.id) && !starterIdSet.has(player.id)),
-    [primaryIdSet, secondaryFlagged, starterIdSet]
-  );
-
-  const unflaggedRoster = useMemo(
-    () =>
-      roster.filter(
-        (player) =>
-          !primaryIdSet.has(player.id) &&
-          !starterIdSet.has(player.id) &&
-          !secondaryIds.includes(player.id)
-      ),
-    [primaryIdSet, roster, secondaryIds, starterIdSet]
-  );
 
   const normalizeGroup = useCallback((value: string) => value.trim().toLowerCase(), []);
 
   const matchesGroup = useCallback(
     (player: TeamPlayer, tab: string) => {
-      if (tab === "all") {
+      if (tab === "all" || tab === "roster") {
         return true;
       }
       const groups = player.positionGroup ?? [];
@@ -310,30 +292,52 @@ export default function StatEntryPage({
     [matchesPositionGroup]
   );
 
-  const filteredStarterFlagged = useMemo(
-    () => filterByGroup(starterFlagged),
-    [filterByGroup, starterFlagged]
+  const getRolePriority = useCallback(
+    (player: TeamPlayer) => {
+      if (primaryIdSet.has(player.id)) return 0;
+      if (secondaryIdSet.has(player.id)) return 1;
+      if (starterIdSet.has(player.id)) return 2;
+      return 3;
+    },
+    [primaryIdSet, secondaryIdSet, starterIdSet]
   );
 
+  const matchesRosterBucket = useCallback(
+    (player: TeamPlayer) => {
+      if (rosterBucket === "all") return true;
+      if (rosterBucket === "playmakers") return primaryIdSet.has(player.id);
+      if (rosterBucket === "secondary") return secondaryIdSet.has(player.id);
+      if (rosterBucket === "starters") return starterIdSet.has(player.id);
+      return (
+        !primaryIdSet.has(player.id) &&
+        !secondaryIdSet.has(player.id) &&
+        !starterIdSet.has(player.id)
+      );
+    },
+    [primaryIdSet, rosterBucket, secondaryIdSet, starterIdSet]
+  );
+
+  const filteredRoster = useMemo(() => {
+    const base = filterByGroup(roster);
+    if (rosterBucket === "all") {
+      return [...base].sort((a, b) => {
+        const roleDelta = getRolePriority(a) - getRolePriority(b);
+        if (roleDelta !== 0) return roleDelta;
+        return a.name.localeCompare(b.name);
+      });
+    }
+    return base.filter(matchesRosterBucket);
+  }, [filterByGroup, getRolePriority, matchesRosterBucket, roster, rosterBucket]);
 
   const groupCounts = useMemo(() => {
     return {
       all: roster.length,
       offense: roster.filter((player) => matchesGroup(player, "offense")).length,
       defense: roster.filter((player) => matchesGroup(player, "defense")).length,
-      special: roster.filter((player) => matchesGroup(player, "special")).length
+      special: roster.filter((player) => matchesGroup(player, "special")).length,
+      roster: roster.length
     };
   }, [matchesGroup, roster]);
-
-  const primaryRoster = useMemo(
-    () => filterByGroup(primaryFlagged),
-    [filterByGroup, primaryFlagged]
-  );
-
-  const secondaryRoster = useMemo(
-    () => filterByGroup(secondaryOnly),
-    [filterByGroup, secondaryOnly]
-  );
 
   const renderTabLabel = (label: string, count: number) => (
     <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
@@ -465,6 +469,7 @@ export default function StatEntryPage({
   const shortcutId = isShortcutOpen ? "stat-entry-shortcuts" : undefined;
   const isPrimaryActive = activePlayerField === "primary";
   const normalizedTeamName = teamName?.trim() ?? "";
+  const nextAssignmentLabel = isPrimaryActive ? "Primary" : "Secondary";
 
   const toDateKey = (value: string) => {
     const date = new Date(value);
@@ -1955,9 +1960,7 @@ export default function StatEntryPage({
     event?.preventDefault();
     const nextField = activePlayerField === "primary" ? "secondary" : "primary";
     setActivePlayerField(nextField);
-    const container =
-      nextField === "primary" ? primarySelectorRef.current : secondarySelectorRef.current;
-    const button = container?.querySelector("button");
+    const button = playerGridRef.current?.querySelector("button");
     button?.focus();
   });
 
@@ -2299,60 +2302,125 @@ export default function StatEntryPage({
 
         <PlayTypeSelector selected={playType} onSelect={setPlayType} />
 
-        <Paper elevation={1} sx={{ p: { xs: 0.5, sm: 1 } }}>
-          <Tabs
-            value={positionGroupTab}
-            onChange={(_, value) => setPositionGroupTab(value)}
-            variant="scrollable"
-            allowScrollButtonsMobile
-            sx={{ minHeight: { xs: 36, sm: 44 } }}
-          >
-            <Tab
-              value="all"
-              label={renderTabLabel("All", groupCounts.all)}
-              sx={{ minHeight: { xs: 36, sm: 44 }, py: { xs: 0.5, sm: 1 } }}
-            />
-            <Tab
-              value="offense"
-              label={renderTabLabel("Offense", groupCounts.offense)}
-              sx={{ minHeight: { xs: 36, sm: 44 }, py: { xs: 0.5, sm: 1 } }}
-            />
-            <Tab
-              value="defense"
-              label={renderTabLabel("Defense", groupCounts.defense)}
-              sx={{ minHeight: { xs: 36, sm: 44 }, py: { xs: 0.5, sm: 1 } }}
-            />
-            <Tab
-              value="special"
-              label={renderTabLabel("Special Teams", groupCounts.special)}
-              sx={{ minHeight: { xs: 36, sm: 44 }, py: { xs: 0.5, sm: 1 } }}
-            />
-          </Tabs>
-        </Paper>
-
-        <Accordion
-          expanded={accordionState.primary}
-          onChange={handleAccordionChange("primary")}
-          sx={{
-            border: "1px solid",
-            borderColor: isPrimaryActive ? "primary.main" : "divider"
-          }}
-        >
-          <AccordionSummary expandIcon={<ChevronDown size={18} />}>
-            <Typography variant="subtitle2" color="text.secondary">
-              Playmakers
+        <Paper elevation={1} sx={{ p: { xs: 1.5, sm: 2 } }}>
+          <Stack spacing={2}>
+            <Stack
+              direction={{ xs: "column", sm: "row" }}
+              alignItems={{ sm: "center" }}
+              justifyContent="space-between"
+              spacing={1}
+            >
+              <Typography variant="subtitle2" color="text.secondary">
+                Players
+              </Typography>
+              <Stack direction="row" spacing={1} alignItems="center">
+                <Typography variant="caption" color="text.secondary">
+                  Next: {nextAssignmentLabel}
+                </Typography>
+                <ToggleButtonGroup
+                  value={activePlayerField}
+                  exclusive
+                  size="small"
+                  onChange={(_, value) => {
+                    if (value === "primary" || value === "secondary") {
+                      setActivePlayerField(value);
+                    }
+                  }}
+                >
+                  <ToggleButton value="primary">Primary</ToggleButton>
+                  <ToggleButton value="secondary">Secondary</ToggleButton>
+                </ToggleButtonGroup>
+              </Stack>
+            </Stack>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ sm: "center" }}>
+              <Typography variant="caption" color="text.secondary">
+                Role filter
+              </Typography>
+              <ToggleButtonGroup
+                value={rosterBucket}
+                exclusive
+                size="small"
+                onChange={(_, value) => {
+                  if (value) {
+                    setRosterBucket(value);
+                  }
+                }}
+                sx={{ flexWrap: "wrap" }}
+              >
+                <ToggleButton value="playmakers">Playmakers</ToggleButton>
+                <ToggleButton value="secondary">Secondary</ToggleButton>
+                <ToggleButton value="starters">Starters</ToggleButton>
+                <ToggleButton value="roster">Roster</ToggleButton>
+                <ToggleButton value="all">All</ToggleButton>
+              </ToggleButtonGroup>
+            </Stack>
+            <Typography variant="caption" color="text.secondary">
+              Tap a player to assign. Each tap alternates Primary to Secondary.
             </Typography>
-          </AccordionSummary>
-          <AccordionDetails ref={primarySelectorRef}>
-            <Stack spacing={2}>
-              {primaryRoster.length > 0 ? (
+            <Typography variant="caption" color="text.secondary">
+              Badges: PM=Playmakers, SEC=Secondary, ST=Starters, R=Roster.
+            </Typography>
+            <Paper
+              elevation={0}
+              sx={{ p: { xs: 0.5, sm: 1 }, border: "1px solid", borderColor: "divider" }}
+            >
+              <Tabs
+                value={positionGroupTab}
+                onChange={(_, value) => setPositionGroupTab(value)}
+                variant="scrollable"
+                allowScrollButtonsMobile
+                sx={{ minHeight: { xs: 36, sm: 44 } }}
+              >
+                <Tab
+                  value="all"
+                  label={renderTabLabel("All", groupCounts.all)}
+                  sx={{ minHeight: { xs: 36, sm: 44 }, py: { xs: 0.5, sm: 1 } }}
+                />
+                <Tab
+                  value="offense"
+                  label={renderTabLabel("Offense", groupCounts.offense)}
+                  sx={{ minHeight: { xs: 36, sm: 44 }, py: { xs: 0.5, sm: 1 } }}
+                />
+                <Tab
+                  value="defense"
+                  label={renderTabLabel("Defense", groupCounts.defense)}
+                  sx={{ minHeight: { xs: 36, sm: 44 }, py: { xs: 0.5, sm: 1 } }}
+                />
+                <Tab
+                  value="special"
+                  label={renderTabLabel("Special Teams", groupCounts.special)}
+                  sx={{ minHeight: { xs: 36, sm: 44 }, py: { xs: 0.5, sm: 1 } }}
+                />
+                <Tab
+                  value="roster"
+                  label={renderTabLabel("Roster", groupCounts.roster)}
+                  sx={{ minHeight: { xs: 36, sm: 44 }, py: { xs: 0.5, sm: 1 } }}
+                />
+              </Tabs>
+            </Paper>
+            <Box ref={playerGridRef}>
+              {filteredRoster.length > 0 ? (
                 <PlayerSelector
                   title=""
-                  players={primaryRoster}
+                  players={filteredRoster}
                   selected={primaryPlayer}
+                  secondarySelected={secondaryPlayer}
+                  roleLabels={(player) => {
+                    const labels: string[] = [];
+                    if (primaryIdSet.has(player.id)) labels.push("PM");
+                    if (secondaryIdSet.has(player.id)) labels.push("SEC");
+                    if (starterIdSet.has(player.id)) labels.push("ST");
+                    if (labels.length === 0) labels.push("R");
+                    return labels;
+                  }}
                   onSelect={(player) => {
-                    setActivePlayerField("primary");
-                    setPrimaryPlayer(player);
+                    if (isPrimaryActive) {
+                      setPrimaryPlayer(player);
+                      setActivePlayerField("secondary");
+                    } else {
+                      setSecondaryPlayer(player);
+                      setActivePlayerField("primary");
+                    }
                   }}
                 />
               ) : (
@@ -2360,105 +2428,9 @@ export default function StatEntryPage({
                   No players in this group.
                 </Typography>
               )}
-            </Stack>
-          </AccordionDetails>
-        </Accordion>
-
-        <Accordion
-          expanded={accordionState.secondary}
-          onChange={handleAccordionChange("secondary")}
-          sx={{
-            border: "1px solid",
-            borderColor: isPrimaryActive ? "divider" : "primary.main"
-          }}
-        >
-          <AccordionSummary expandIcon={<ChevronDown size={18} />}>
-            <Typography variant="subtitle2" color="text.secondary">
-              Other Players
-            </Typography>
-          </AccordionSummary>
-          <AccordionDetails ref={secondarySelectorRef}>
-            <Stack spacing={2}>
-              {secondaryRoster.length > 0 ? (
-                <PlayerSelector
-                  title=""
-                  players={secondaryRoster}
-                  selected={secondaryPlayer}
-                  onSelect={(player) => {
-                    setActivePlayerField("secondary");
-                    setSecondaryPlayer(player);
-                  }}
-                />
-              ) : (
-                <Typography variant="body2" color="text.secondary">
-                  No players in this group.
-                </Typography>
-              )}
-            </Stack>
-          </AccordionDetails>
-        </Accordion>
-
-        <Accordion
-          expanded={accordionState.starters}
-          onChange={handleAccordionChange("starters")}
-          sx={{ border: "1px solid", borderColor: "divider" }}
-        >
-          <AccordionSummary expandIcon={<ChevronDown size={18} />}>
-            <Typography variant="subtitle2" color="text.secondary">
-              Starters
-            </Typography>
-          </AccordionSummary>
-          <AccordionDetails>
-            {filteredStarterFlagged.length > 0 ? (
-              <PlayerSelector
-                title=""
-                players={filteredStarterFlagged}
-                onSelect={(player) => {
-                  if (isPrimaryActive) {
-                    setPrimaryPlayer(player);
-                  } else {
-                    setSecondaryPlayer(player);
-                  }
-                }}
-              />
-            ) : (
-              <Typography variant="body2" color="text.secondary">
-                No starters in this group.
-              </Typography>
-            )}
-          </AccordionDetails>
-        </Accordion>
-
-        <Accordion
-          expanded={accordionState.unflagged}
-          onChange={handleAccordionChange("unflagged")}
-          sx={{ border: "1px solid", borderColor: "divider" }}
-        >
-          <AccordionSummary expandIcon={<ChevronDown size={18} />}>
-            <Typography variant="subtitle2" color="text.secondary">
-              Roster (unflagged)
-            </Typography>
-          </AccordionSummary>
-          <AccordionDetails>
-            {unflaggedRoster.length > 0 ? (
-              <PlayerSelector
-                title="Roster"
-                players={unflaggedRoster}
-                onSelect={(player) => {
-                  if (isPrimaryActive) {
-                    setPrimaryPlayer(player);
-                  } else {
-                    setSecondaryPlayer(player);
-                  }
-                }}
-              />
-            ) : (
-              <Typography variant="body2" color="text.secondary">
-                No unflagged players.
-              </Typography>
-            )}
-          </AccordionDetails>
-        </Accordion>
+            </Box>
+          </Stack>
+        </Paper>
 
         <Box
           sx={{
@@ -2594,6 +2566,7 @@ export default function StatEntryPage({
       ) : (
         <Stack spacing={{ xs: 2, md: 3 }}>{rightPanelContent}</Stack>
       )}
+
 
       <Dialog
         open={isCreateOpen}
